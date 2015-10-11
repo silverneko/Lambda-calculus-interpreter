@@ -5,6 +5,7 @@
 #include <functional>
 #include <vector>
 #include <deque>
+#include <map>
 
 #include <cstdio>
 #include <readline/readline.h>
@@ -28,7 +29,7 @@ const Parser identifier(+alpha);
 const Parser lambda('\\');
 const Parser leftBracket('(');
 const Parser rightBracket(')');
-const Parser panic(anyChar[ ([](const string& str){ cerr << "[Lex] Unknown input: " << str << endl;}) ]);
+const Parser panic(anyChar[ ([](const string& str){ cerr << "[Lex] Unexpected input: " << str << endl;}) ]);
 
 class Token{
   public:
@@ -108,22 +109,9 @@ class Expression{
     void print() const ;
 };
 
-Expression * parseVar(Scanner&);
 Expression * parseLambda(Scanner&);
-Expression * parseAp(Scanner&);
 Expression * parseExpression(Scanner&);
-
-Expression * parseVar(Scanner &scanner){
-  Token token = scanner.getToken();
-  if(token.type == Token::Identifier){
-    Expression * expr = new Expression(Expression::Var);
-    expr->name = token.name;
-    return expr;
-  }else{
-    cerr << "[Parse] Expect an identifier: " << token.name << endl;
-    exit(1);
-  }
-}
+Expression * parseExpressionTail(Scanner&);
 
 Expression * parseLambda(Scanner &scanner){
   Token token = scanner.getToken();
@@ -137,34 +125,8 @@ Expression * parseLambda(Scanner &scanner){
   return expr;
 }
 
-Expression * parseApTail(Scanner &scanner){
-  Token token = scanner.getToken();
-  Expression * expr = nullptr;
-  switch(token.type){
-    case Token::Lambda:
-      return parseLambda(scanner);
-
-    case Token::Identifier:
-      scanner.ungetToken(token);
-      return parseVar(scanner);
-
-    case Token::LeftBracket:
-      expr = parseExpression(scanner);
-      token = scanner.getToken();
-      if(token.type != Token::RightBracket){
-        cerr << "[Parse] Expect a `)`: " << token.name << endl;
-        exit(1);
-      }
-      return expr;
-
-    default:
-      cerr << "[Parse] Unexpected: " << token.name << endl;
-      exit(1);
-  }
-}
-
-Expression * parseAp(Scanner &scanner){
-  Expression * expr = parseApTail(scanner);
+Expression * parseExpression(Scanner &scanner){
+  Expression * expr = parseExpressionTail(scanner);
   while(true){
     switch(scanner.peekToken().type){
       case Token::RightBracket:
@@ -175,29 +137,38 @@ Expression * parseAp(Scanner &scanner){
     }
     Expression * expr1 = new Expression(Expression::Ap);
     expr1->body = expr;
-    expr1->arg  = parseApTail(scanner);
+    expr1->arg  = parseExpressionTail(scanner);
     expr = expr1;
   }
 }
 
-Expression * parseExpression(Scanner &scanner){
+Expression * parseExpressionTail(Scanner &scanner){
   Token token = scanner.getToken();
+  Expression * expr = nullptr;
   switch(token.type){
     case Token::Lambda:
       return parseLambda(scanner);
 
     case Token::Identifier:
+      expr = new Expression(Expression::Var);
+      expr->name = token.name;
+      return expr;
+
     case Token::LeftBracket:
-      scanner.ungetToken(token);
-      return parseAp(scanner);
+      expr = parseExpression(scanner);
+      token = scanner.getToken();
+      if(token.type != Token::RightBracket){
+        cerr << "[Parse] Expected a `)`: " << token.name << endl;
+        exit(1);
+      }
+      return expr;
 
     case Token::RightBracket:
     case Token::EndOfFile:
-    case Token::Undefined:
-      cerr << "[Parse] Unexpected: " << token.name << endl;
+    default:
+      cerr << "[Parse] Unexpected token: " << token.name << endl;
       exit(1);
   }
-  return nullptr;
 }
 
 int main(int argc, char *argv[])
