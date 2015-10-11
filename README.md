@@ -1,2 +1,6 @@
 # Lambda-calculus-interpreter
-untyped lambda calculus
+
+Untyped lambda calculus
+
+Project of the [BYOHC-Workshop](https://github.com/CindyLinz/BYOHC-Workshop).
+
