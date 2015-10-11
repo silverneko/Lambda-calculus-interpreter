@@ -137,14 +137,16 @@ Expression * parseLambda(Scanner &scanner){
   return expr;
 }
 
-Expression * parseAp(Scanner &scanner){
+Expression * parseApTail(Scanner &scanner){
   Token token = scanner.getToken();
   Expression * expr = nullptr;
   switch(token.type){
+    case Token::Lambda:
+      return parseLambda(scanner);
+
     case Token::Identifier:
       scanner.ungetToken(token);
-      expr = parseVar(scanner);
-      break;
+      return parseVar(scanner);
 
     case Token::LeftBracket:
       expr = parseExpression(scanner);
@@ -153,23 +155,29 @@ Expression * parseAp(Scanner &scanner){
         cerr << "[Parse] Expect a `)`: " << token.name << endl;
         exit(1);
       }
-      break;
+      return expr;
 
     default:
       cerr << "[Parse] Unexpected: " << token.name << endl;
       exit(1);
   }
-  switch(scanner.peekToken().type){
-    case Token::RightBracket:
-    case Token::EndOfFile:
-      return expr;
+}
 
-    default: break;
+Expression * parseAp(Scanner &scanner){
+  Expression * expr = parseApTail(scanner);
+  while(true){
+    switch(scanner.peekToken().type){
+      case Token::RightBracket:
+      case Token::EndOfFile:
+        return expr;
+
+      default: break;
+    }
+    Expression * expr1 = new Expression(Expression::Ap);
+    expr1->body = expr;
+    expr1->arg  = parseApTail(scanner);
+    expr = expr1;
   }
-  Expression * ap = new Expression(Expression::Ap);
-  ap->body = expr;
-  ap->arg  = parseExpression(scanner);
-  return ap;
 }
 
 Expression * parseExpression(Scanner &scanner){
