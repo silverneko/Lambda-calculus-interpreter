@@ -6,6 +6,8 @@
 #include <vector>
 #include <deque>
 #include <map>
+#include <unordered_map>
+#include <memory>
 
 #include <cstdio>
 #include <readline/readline.h>
@@ -70,15 +72,14 @@ class Scanner{
 
     Token getToken(){
       if(tokens.empty()) return Token(Token::EndOfFile, "EOF");
-      Token token =  tokens.front();
+      Token token = tokens.front();
       tokens.pop_front();
       return token;
     }
 
     Token peekToken(){
       if(tokens.empty()) return Token(Token::EndOfFile, "EOF");
-      Token token =  tokens.front();
-      return token;
+      return tokens.front();
     }
 
     void ungetToken(const Token& token){
@@ -95,38 +96,24 @@ class Expression{
   public:
     enum Type{Nothing, Var, Lambda, Ap} type;
     string name;
-    Expression * body, * arg;
+    shared_ptr<Expression> body, arg;
 
-    Expression() : type(Nothing), name(), body(nullptr), arg(nullptr) {}
-    Expression(Type t) : type(t), name(), body(nullptr), arg(nullptr) {}
-    Expression(const Expression& expr) : type(expr.type), name(expr.name), body(expr.body), arg(expr.arg){}
+    Expression() : type(Nothing), name(), body(), arg() {}
+    Expression(Type t) : type(t), name(), body(), arg() {}
+    Expression(const Expression& expr) : type(expr.type), name(expr.name), body(expr.body), arg(expr.arg) {}
 
-    ~Expression(){
-      delete body;
-      delete arg;
-    }
-
+    bool isVar() const { return type == Var;}
+    bool isLam() const { return type == Lambda;}
+    bool isAp() const { return type == Ap;}
     void print() const ;
+    void prettyPrint() const ;
 };
 
-Expression * parseLambda(Scanner&);
-Expression * parseExpression(Scanner&);
-Expression * parseExpressionTail(Scanner&);
+shared_ptr<Expression> parseExpression(Scanner&);
+shared_ptr<Expression> parseExpressionTail(Scanner&);
 
-Expression * parseLambda(Scanner &scanner){
-  Token token = scanner.getToken();
-  if(token.type != Token::Identifier){
-    cerr << "[Parse] Expected an identifier: " << token.name << endl;
-    exit(1);
-  }
-  Expression * expr = new Expression(Expression::Lambda);
-  expr->name = token.name;
-  expr->body = parseExpression(scanner);
-  return expr;
-}
-
-Expression * parseExpression(Scanner &scanner){
-  Expression * expr = parseExpressionTail(scanner);
+shared_ptr<Expression> parseExpression(Scanner &scanner){
+  shared_ptr<Expression> expr(parseExpressionTail(scanner));
   while(true){
     switch(scanner.peekToken().type){
       case Token::RightBracket:
@@ -135,22 +122,30 @@ Expression * parseExpression(Scanner &scanner){
 
       default: break;
     }
-    Expression * expr1 = new Expression(Expression::Ap);
+    shared_ptr<Expression> expr1(new Expression(Expression::Ap));
     expr1->body = expr;
     expr1->arg  = parseExpressionTail(scanner);
     expr = expr1;
   }
 }
 
-Expression * parseExpressionTail(Scanner &scanner){
+shared_ptr<Expression> parseExpressionTail(Scanner &scanner){
   Token token = scanner.getToken();
-  Expression * expr = nullptr;
+  shared_ptr<Expression> expr(nullptr);
   switch(token.type){
     case Token::Lambda:
-      return parseLambda(scanner);
+      token = scanner.getToken();
+      if(token.type != Token::Identifier){
+        cerr << "[Parse] Expected an identifier: " << token.name << endl;
+        exit(1);
+      }
+      expr.reset(new Expression(Expression::Lambda));
+      expr->name = token.name;
+      expr->body = parseExpression(scanner);
+      return expr;
 
     case Token::Identifier:
-      expr = new Expression(Expression::Var);
+      expr.reset(new Expression(Expression::Var));
       expr->name = token.name;
       return expr;
 
@@ -171,6 +166,108 @@ Expression * parseExpressionTail(Scanner &scanner){
   }
 }
 
+class Context;
+using Thunk = tuple<shared_ptr<Expression>, shared_ptr<Context>>;
+
+class Context{
+    unordered_map<string, Thunk> _env;
+  public:
+    Context() : _env() {}
+    Context(const Context& context) : _env(context._env) {}
+    Context(const unordered_map<string, Thunk> &env) : _env(env) {}
+
+    shared_ptr<Context> insert(const string&, const Thunk&) const;
+    shared_ptr<Context> erase(const string&) const;
+    Thunk lookup(const string&) const;
+    Thunk operator [] (const string&) const;
+    bool find(const string&) const;
+};
+
+shared_ptr<Context> Context::insert(const string& str, const Thunk& thunk) const {
+  shared_ptr<Context> env(new Context(*this));
+  env->_env[str] = thunk;
+  return env;
+}
+
+shared_ptr<Context> Context::erase(const string& str) const {
+  shared_ptr<Context> env(new Context(*this));
+  env->_env.erase(str);
+  return env;
+}
+
+Thunk Context::lookup(const string& str) const {
+  auto it = _env.find(str);
+  if(it == _env.cend()){
+    cerr << "[Context lookup] Unbounded variable: " << str << endl;
+    exit(1);
+  }
+  return it->second;
+}
+
+Thunk Context::operator [] (const string& str) const {
+  return lookup(str);
+}
+
+bool Context::find(const string& str) const {
+  if(_env.count(str) > 0) return true;
+  return false;
+}
+
+Thunk normalForm(Thunk);
+
+Thunk weakNormalForm(Thunk thunk){
+  auto expr = get<0>(thunk);
+  auto env  = get<1>(thunk);
+  if(expr->isLam()){
+    return thunk;
+  }else if(expr->isVar()){
+    if(env->find(expr->name)){
+      return weakNormalForm(env->lookup(expr->name));
+    }else{
+      return thunk;
+    }
+  }else{
+    shared_ptr<Expression> expr2;
+    shared_ptr<Context> env2;
+    tie(expr2, env2) = weakNormalForm(Thunk(expr->body, env));
+    if( !expr2->isLam() ){
+      shared_ptr<Expression> expr3(new Expression(Expression::Ap));
+      expr3->body = expr2;
+      tie(expr3->arg, ignore)  = normalForm(Thunk(expr->arg, env));
+      return Thunk(expr3, env);
+    }
+    return weakNormalForm(Thunk(expr2->body, env2->insert(expr2->name, Thunk(expr->arg, env))));
+  }
+}
+
+Thunk normalForm(Thunk thunk){
+  auto expr = get<0>(thunk);
+  auto env  = get<1>(thunk);
+  if(expr->isLam()){
+    shared_ptr<Expression> expr2(new Expression(*expr));
+    // Unbound variable
+    tie(expr2->body, ignore) = normalForm(Thunk(expr->body, env->erase(expr->name)));
+    return Thunk(expr2, env);
+  }else if(expr->isVar()){
+    if(env->find(expr->name)){
+      return normalForm(env->lookup(expr->name));
+    }else{
+      return thunk;
+    }
+  }else{
+    shared_ptr<Expression> expr2;
+    shared_ptr<Context> env2;
+    tie(expr2, env2) = weakNormalForm(Thunk(expr->body, env));
+    if( !expr2->isLam() ){
+      shared_ptr<Expression> expr3(new Expression(Expression::Ap));
+      expr3->body = expr2;
+      tie(expr3->arg, ignore)  = normalForm(Thunk(expr->arg, env));
+      return Thunk(expr3, env);
+    }
+    return normalForm(Thunk(expr2->body, env2->insert(expr2->name, Thunk(expr->arg, env))));
+  }
+}
+
 int main(int argc, char *argv[])
 {
   string rawInput;
@@ -187,9 +284,19 @@ int main(int argc, char *argv[])
 
   Scanner scanner(rawInput);
 
-  Expression * expr = parseExpression(scanner);
+  shared_ptr<Expression> expr = parseExpression(scanner);
+  shared_ptr<Context> env(new Context);
+  Thunk thunk(expr, env);
 
   expr->print();
+  cout << endl;
+  cout << endl;
+
+  get<0>(normalForm(thunk))->prettyPrint();
+  cout << endl;
+  cout << endl;
+  get<0>(normalForm(thunk))->print();
+  cout << endl;
 
   cout << "\nLeaving main\n";
   return 0;
@@ -219,5 +326,21 @@ void Expression::print() const {
       cout << "]";
       break;
 
+  }
+}
+
+void Expression::prettyPrint() const {
+  if(isVar()){
+    cout << name;
+  }else if(isLam()){
+    cout << "\\" << name << " ";
+    body->prettyPrint();
+  }else if(isAp()){
+    body->prettyPrint();
+    cout << " (";
+    arg->prettyPrint();
+    cout << ")";
+  }else{
+    cerr << "[Expression] Unexpected expression type: Nothing" << endl;
   }
 }

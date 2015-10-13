@@ -5,10 +5,11 @@ Untyped lambda calculus
 Project of the [BYOHC-Workshop](https://github.com/CindyLinz/BYOHC-Workshop).
 
 ## TODO
-- [X] Parsing
-- [X] To json
+- [x] Parsing
+- [x] To json
 - [ ] From json
-- [ ] Substitution
-- [ ] Normal form
-- [ ] Weak normal form
+- [x] Substitution
+- [x] Normal form
+- [x] Weak normal form
 - [ ] Blah Blah
+- [ ] Refactor
