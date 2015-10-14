@@ -173,7 +173,6 @@ shared_ptr<Expression> parseExpressionTail(Scanner &scanner){
  * type Primitive = Var -> Expression
  * data Object = Object Expression Context | Primitive Context
  * data Context = [(Var, Object)]
- * type Var = String
  *
  * weakNormalForm :: Object -> Object
  * normalForm :: Object -> Object
@@ -191,12 +190,38 @@ class Context{
     Context() : _env() {}
     Context(const Context& context) : _env(context._env) {}
 
+    Context& add(const string&, const string&);
     shared_ptr<Context> insert(const string&, const shared_ptr<Object>) const;
     shared_ptr<Context> erase(const string&) const;
     shared_ptr<Object> lookup(const string&) const;
     shared_ptr<Object> operator [] (const string&) const;
     bool exist(const string&) const;
 };
+
+class Object{
+  public:
+    shared_ptr<Expression> _expr;
+    shared_ptr<Context> _env;
+
+    Object(){}
+    Object(shared_ptr<Expression> expr) : _expr(expr), _env(new Context) {}
+    Object(shared_ptr<Expression> expr, shared_ptr<Context> env) : _expr(expr), _env(env){}
+
+    Object weakNormalForm();
+    Object normalForm();
+
+    string& name(){ return _expr->name;}
+    shared_ptr<Expression>& body(){ return _expr->body;}
+    shared_ptr<Expression>& arg(){ return _expr->arg;}
+};
+
+Context& Context::add(const string& name, const string& rule){
+  Scanner scanner(rule);
+  auto expr = parseExpression(scanner);
+  shared_ptr<Context> env(new Context(*this));
+  _env[name].reset(new Object(expr, env));
+  return *this;
+}
 
 shared_ptr<Context> Context::insert(const string& str, const shared_ptr<Object> obj) const {
   shared_ptr<Context> env(new Context(*this));
@@ -227,23 +252,6 @@ bool Context::exist(const string& str) const {
   if(_env.count(str) > 0) return true;
   return false;
 }
-
-class Object{
-  public:
-    shared_ptr<Expression> _expr;
-    shared_ptr<Context> _env;
-
-    Object(){}
-    Object(shared_ptr<Expression> expr) : _expr(expr), _env(new Context) {}
-    Object(shared_ptr<Expression> expr, shared_ptr<Context> env) : _expr(expr), _env(env){}
-
-    Object weakNormalForm();
-    Object normalForm();
-
-    string& name(){ return _expr->name;}
-    shared_ptr<Expression>& body(){ return _expr->body;}
-    shared_ptr<Expression>& arg(){ return _expr->arg;}
-};
 
 Object Object::weakNormalForm(){
   if(_expr->isVar()){
@@ -321,7 +329,18 @@ int main(int argc, char *argv[])
   cout << endl;
   cout << endl;
 
-  Object(expr).normalForm()._expr->prettyPrint();
+  shared_ptr<Context> prelude(new Context);
+
+  prelude->add("bool", "\\x x true false");
+  prelude->add("true", "\\a \\b a");
+  prelude->add("false", "\\a \\b b");
+  prelude->add("if", "\\pred \\then \\else pred then else");
+  prelude->add("not", "\\x x false true");
+  prelude->add("and", "\\x \\y x y false");
+  prelude->add("or", "\\x \\y x true y");
+  prelude->add("Y", "\\f (\\x f (x x)) (\\x f (x x))");
+
+  Object(expr, prelude).normalForm()._expr->prettyPrint();
   cout << endl;
 
   cout << "\nLeaving main\n";
