@@ -166,6 +166,9 @@ shared_ptr<Expression> parseExpressionTail(Scanner &scanner){
   }
 }
 
+
+
+/*
 class Context;
 using Thunk = tuple<shared_ptr<Expression>, shared_ptr<Context>>;
 
@@ -212,7 +215,143 @@ bool Context::find(const string& str) const {
   if(_env.count(str) > 0) return true;
   return false;
 }
+*/
 
+/* Data structures
+ *
+ * data Expression = Var | Lambda | Ap | Primitive
+ * type Primitive = Var -> Expression
+ *
+ * data Object = Object Expression Context
+ * data Context = [(Var, Object)]
+ * type Var = String
+ *
+ * weakNormalForm :: Object -> Object
+ * normalForm :: Object -> Object
+ *
+ * weakNormalForm / normalForm morphs a object (beta reduction)
+ *
+ */
+
+class Object;
+class Context;
+
+class Context{
+    unordered_map<string, shared_ptr<Object>> _env;
+  public:
+    Context() : _env() {}
+    Context(const Context& context) : _env(context._env) {}
+
+    shared_ptr<Context> insert(const string&, const shared_ptr<Object>) const;
+    shared_ptr<Context> erase(const string&) const;
+    shared_ptr<Object> lookup(const string&) const;
+    shared_ptr<Object> operator [] (const string&) const;
+    bool exist(const string&) const;
+};
+
+shared_ptr<Context> Context::insert(const string& str, const shared_ptr<Object> obj) const {
+  shared_ptr<Context> env(new Context(*this));
+  env->_env[str] = obj;
+  return env;
+}
+
+shared_ptr<Context> Context::erase(const string& str) const {
+  shared_ptr<Context> env(new Context(*this));
+  env->_env.erase(str);
+  return env;
+}
+
+shared_ptr<Object> Context::lookup(const string& str) const {
+  auto it = _env.find(str);
+  if(it == _env.cend()){
+    cerr << "[Context lookup] Unbounded variable: " << str << endl;
+    exit(1);
+  }
+  return it->second;
+}
+
+shared_ptr<Object> Context::operator [] (const string& str) const {
+  return lookup(str);
+}
+
+bool Context::exist(const string& str) const {
+  if(_env.count(str) > 0) return true;
+  return false;
+}
+
+class Object{
+  public:
+    shared_ptr<Expression> _expr;
+    shared_ptr<Context> _env;
+
+    Object(){}
+    Object(shared_ptr<Expression> expr) : _expr(expr), _env(new Context) {}
+    Object(shared_ptr<Expression> expr, shared_ptr<Context> env) : _expr(expr), _env(env){}
+
+    Object weakNormalForm();
+    Object normalForm();
+
+    string& name(){ return _expr->name;}
+    shared_ptr<Expression>& body(){ return _expr->body;}
+    shared_ptr<Expression>& arg(){ return _expr->arg;}
+};
+
+Object Object::weakNormalForm(){
+  if(_expr->isVar()){
+    if(_env->exist( name() )){
+      return _env->lookup( name() )->weakNormalForm();
+    }else{
+      return Object(_expr);
+    }
+  }else if(_expr->isLam()){
+    return *this;
+  }else if(_expr->isAp()){
+    Object obj2(body(), _env);
+    obj2 = obj2.weakNormalForm();
+    if(obj2._expr->isLam()){
+      return Object(obj2.body(), obj2._env->insert(obj2.name(), shared_ptr<Object>(new Object(arg(), _env)))).weakNormalForm();
+    }else{
+      Object obj3(shared_ptr<Expression>(new Expression(Expression::Ap)), _env);
+      obj3.body() = Object(body(), _env).weakNormalForm()._expr;
+      obj3.arg()  = Object(arg(), _env).normalForm()._expr;
+      return obj3;
+    }
+  }else{
+    cerr << "[Weak Normal Form] Unexpected Expression type: " << _expr->type << endl;
+    exit(1);
+  }
+}
+
+Object Object::normalForm(){
+  if(_expr->isVar()){
+    if(_env->exist( name() )){
+      return _env->lookup( name() )->normalForm();
+    }else{
+      return Object(_expr);
+    }
+  }else if(_expr->isLam()){
+    Object obj2(shared_ptr<Expression>(new Expression(*_expr)), _env);
+    obj2.body() = Object(body(), _env->erase(name())).normalForm()._expr;
+    return obj2;
+  }else if(_expr->isAp()){
+    Object obj2(body(), _env);
+    obj2 = obj2.weakNormalForm();
+    if(obj2._expr->isLam()){
+      return Object(obj2.body(), obj2._env->insert(obj2.name(), shared_ptr<Object>(new Object(arg(), _env)))).normalForm();
+    }else{
+      Object obj3(shared_ptr<Expression>(new Expression(Expression::Ap)), _env);
+      obj3.body() = Object(body(), _env).weakNormalForm()._expr;
+      obj3.arg()  = Object(arg(), _env).normalForm()._expr;
+      return obj3;
+    }
+  }else{
+    cerr << "[Weak Normal Form] Unexpected Expression type: " << _expr->type << endl;
+    exit(1);
+  }
+}
+
+
+/*
 Thunk normalForm(Thunk);
 
 Thunk weakNormalForm(Thunk thunk){
@@ -233,7 +372,7 @@ Thunk weakNormalForm(Thunk thunk){
     if( !expr2->isLam() ){
       shared_ptr<Expression> expr3(new Expression(Expression::Ap));
       expr3->body = expr2;
-      tie(expr3->arg, ignore)  = normalForm(Thunk(expr->arg, env));
+      tie(expr3->arg, ignore) = normalForm(Thunk(expr->arg, env));
       return Thunk(expr3, env);
     }
     return weakNormalForm(Thunk(expr2->body, env2->insert(expr2->name, Thunk(expr->arg, env))));
@@ -267,6 +406,7 @@ Thunk normalForm(Thunk thunk){
     return normalForm(Thunk(expr2->body, env2->insert(expr2->name, Thunk(expr->arg, env))));
   }
 }
+*/
 
 int main(int argc, char *argv[])
 {
@@ -285,17 +425,12 @@ int main(int argc, char *argv[])
   Scanner scanner(rawInput);
 
   shared_ptr<Expression> expr = parseExpression(scanner);
-  shared_ptr<Context> env(new Context);
-  Thunk thunk(expr, env);
 
   expr->print();
   cout << endl;
   cout << endl;
 
-  get<0>(normalForm(thunk))->prettyPrint();
-  cout << endl;
-  cout << endl;
-  get<0>(normalForm(thunk))->print();
+  Object(expr).normalForm()._expr->prettyPrint();
   cout << endl;
 
   cout << "\nLeaving main\n";
@@ -336,10 +471,13 @@ void Expression::prettyPrint() const {
     cout << "\\" << name << " ";
     body->prettyPrint();
   }else if(isAp()){
+    if(body->isLam() || body->isAp()) cout << "(";
     body->prettyPrint();
-    cout << " (";
+    if(body->isLam() || body->isAp()) cout << ")";
+    cout << " ";
+    if(arg->isLam() || arg->isAp()) cout << "(";
     arg->prettyPrint();
-    cout << ")";
+    if(arg->isLam() || arg->isAp()) cout << ")";
   }else{
     cerr << "[Expression] Unexpected expression type: Nothing" << endl;
   }
