@@ -11,6 +11,7 @@
 
 #include <cstdio>
 #include <readline/readline.h>
+#include <readline/history.h>
 #include "Parsers.hpp"
 
 using namespace std;
@@ -51,8 +52,8 @@ Parser tokenParser(Token& token){
   auto f = [&token](Token::Type t){
     return [&token, t](const string& str){ token = Token(t, str);};
   };
-  return (integer[f(Token::Integer)]
-      | identifier[f(Token::Identifier)]
+  return (/*integer[f(Token::Integer)]
+      |*/ identifier[f(Token::Identifier)]
       | lambda[f(Token::Lambda)]
       | leftBracket[f(Token::LeftBracket)]
       | rightBracket[f(Token::RightBracket)]
@@ -98,7 +99,7 @@ class Scanner{
 
 class Expression{
   public:
-    enum Type{Nothing, Var, Int, Lambda, Ap} type;
+    enum Type{Nothing, Var, Constant, Lambda, Ap} type;
 
     int val;
     string name;
@@ -106,12 +107,12 @@ class Expression{
 
     Expression() : type(Nothing), name(), body(), arg() {}
     Expression(Type t) : type(t), name(), body(), arg() {}
-    Expression(const Expression& expr) : type(expr.type), name(expr.name), body(expr.body), arg(expr.arg) {}
+    Expression(const Expression& expr) : type(expr.type), val(expr.val), name(expr.name), body(expr.body), arg(expr.arg) {}
 
     bool isVar() const { return type == Var;}
     bool isLam() const { return type == Lambda;}
     bool isAp() const { return type == Ap;}
-    bool isInt() const { return type == Int;}
+    bool isNum() const { return type == Constant;}
 
     void print() const ;
     void prettyPrint() const ;
@@ -174,7 +175,7 @@ shared_ptr<Expression> parseExpressionTail(Scanner &scanner){
       return expr;
 
     case Token::Integer:
-      expr.reset(new Expression(Expression::Int));
+      expr.reset(new Expression(Expression::Constant));
       expr->name = token.name;
       expr->val = fromString(token.name);
       return expr;
@@ -200,6 +201,11 @@ shared_ptr<Expression> parseExpressionTail(Scanner &scanner){
  *
  * data Expression = Var | Lambda | Ap
  *
+ * data Object  = Callable Expression
+ * data Context = Map Var/String Object
+ * normalForm :: Context -> Expression -> Object
+ * weakNormalForm :: Context -> Expression -> Object
+ *
  * type Primitive = Var -> Expression
  * data Object = Object Expression Context | Primitive Context
  * data Context = [(Var, Object)]
@@ -217,65 +223,82 @@ class Context;
 class Context{
     unordered_map<string, shared_ptr<Object>> _env;
   public:
-    Context() : _env() {}
+    Context() {}
     Context(const Context& context) : _env(context._env) {}
 
     Context& add(const string&, const string&);
-    shared_ptr<Context> insert(const string&, const shared_ptr<Object>) const;
-    shared_ptr<Context> erase(const string&) const;
-    shared_ptr<Object> lookup(const string&) const;
-    shared_ptr<Object> operator [] (const string&) const;
+    Context insert(const string&, const Object&) const;
+    Context erase(const string&) const;
+    Object& lookup(const string&) const;
+    Object& operator [] (const string&) const;
     bool exist(const string&) const;
 };
 
 class Object{
   public:
-    shared_ptr<Expression> _expr;
-    shared_ptr<Context> _env;
+    using Func = function<Object(const Context&, const Expression&)>;
+    enum Type{Primitive, Ordinary};
+  private:
+    Type _type;
+    Context _env;
+    Expression _expr;
+    Func _func;
+  public:
+    Object(const Expression& expr) : _type(Ordinary), _expr(expr) {}
+    Object(const Context& env, const Expression& expr) : _type(Ordinary), _env(env), _expr(expr) {}
+    Object(const Func& func) : _type(Primitive), _func(func) {}
 
-    Object(){}
-    Object(shared_ptr<Expression> expr) : _expr(expr), _env(new Context) {}
-    Object(shared_ptr<Expression> expr, shared_ptr<Context> env) : _expr(expr), _env(env){}
+    const Expression& expr() const { return _expr;}
+    const Context& env() const { return _env;}
 
-    Object weakNormalForm();
-    Object normalForm();
+    Object call(const Context& env, const Expression& expr) const;
+    bool callable() const {
+      if(type() == Primitive){
+        /* TODO */
+      }else{
+        if(_expr.isLam()){
+          return true;
+        }else{
+          return false;
+        }
+      }
+    }
+    Type type() const { return _type;}
 
-    string& name(){ return _expr->name;}
-    shared_ptr<Expression>& body(){ return _expr->body;}
-    shared_ptr<Expression>& arg(){ return _expr->arg;}
+    // friend Object weakNormalForm(Object&);
+    // friend Object normalForm(Object&);
 };
 
-Context& Context::add(const string& name, const string& rule){
+Context& Context::add(const string& name, const string& rule) {
   Scanner scanner(rule);
   auto expr = parseExpression(scanner);
-  shared_ptr<Context> env(new Context(*this));
-  _env[name].reset(new Object(expr, env));
+  _env[name].reset(new Object(*this, *expr));
   return *this;
 }
 
-shared_ptr<Context> Context::insert(const string& str, const shared_ptr<Object> obj) const {
-  shared_ptr<Context> env(new Context(*this));
-  env->_env[str] = obj;
+Context Context::insert(const string& str, const Object& obj) const {
+  Context env(*this);
+  env._env[str].reset(new Object(obj));
   return env;
 }
 
-shared_ptr<Context> Context::erase(const string& str) const {
-  shared_ptr<Context> env(new Context(*this));
-  env->_env.erase(str);
+Context Context::erase(const string& str) const {
+  Context env(*this);
+  env._env.erase(str);
   return env;
 }
 
-shared_ptr<Object> Context::lookup(const string& str) const {
+Object& Context::lookup(const string& str) const {
+  return (*this)[str];
+}
+
+Object& Context::operator [] (const string& str) const {
   auto it = _env.find(str);
   if(it == _env.cend()){
     cerr << "[Context lookup] Unbounded variable: " << str << endl;
     exit(1);
   }
-  return it->second;
-}
-
-shared_ptr<Object> Context::operator [] (const string& str) const {
-  return lookup(str);
+  return *(it->second);
 }
 
 bool Context::exist(const string& str) const {
@@ -283,76 +306,103 @@ bool Context::exist(const string& str) const {
   return false;
 }
 
-Object Object::weakNormalForm(){
-  if(_expr->isVar()){
-    if(_env->exist( name() )){
-      return (*this) = _env->lookup( name() )->weakNormalForm();
-    }else{
-      return (*this) = Object(_expr);
-    }
-  }else if(_expr->isInt()){
-    return (*this) = Object(_expr);
-  }else if(_expr->isLam()){
-    return *this;
-  }else if(_expr->isAp()){
-    Object obj2(body(), _env);
-    obj2 = obj2.weakNormalForm();
-    if(obj2._expr->isLam()){
-      return (*this) = Object(obj2.body(), obj2._env->insert(obj2.name(), shared_ptr<Object>(new Object(arg(), _env)))).weakNormalForm();
-    }else{
-      Object obj3(shared_ptr<Expression>(new Expression(Expression::Ap)), _env);
-      obj3.body() = Object(body(), _env).weakNormalForm()._expr;
-      obj3.arg()  = Object(arg(), _env).normalForm()._expr;
-      return (*this) = obj3;
-    }
+Object weakNormalForm(const Context& env, const Expression& expr);
+Object normalForm(const Context& env, const Expression& expr);
+
+Object weakNormalForm(Object& obj){
+  if(obj.type() == Object::Primitive){
+    /* TODO */
   }else{
-    cerr << "[Weak Normal Form] Unexpected Expression type: " << _expr->type << endl;
-    exit(1);
+    obj = weakNormalForm(obj.env(), obj.expr());
+    return obj;
   }
 }
 
-Object Object::normalForm(){
-  if(_expr->isVar()){
-    if(_env->exist( name() )){
-      return (*this) = _env->lookup( name() )->normalForm();
-    }else{
-      return (*this) = Object(_expr);
-    }
-  }else if(_expr->isInt()){
-    return (*this) = Object(_expr);
-  }else if(_expr->isLam()){
-    Object obj2(shared_ptr<Expression>(new Expression(*_expr)), _env);
-    obj2.body() = Object(body(), _env->erase(name())).normalForm()._expr;
-    return (*this) = obj2;
-  }else if(_expr->isAp()){
-    Object obj2(body(), _env);
-    obj2 = obj2.weakNormalForm();
-    if(obj2._expr->isLam()){
-      return (*this) = Object(obj2.body(), obj2._env->insert(obj2.name(), shared_ptr<Object>(new Object(arg(), _env)))).normalForm();
-    }else{
-      Object obj3(shared_ptr<Expression>(new Expression(Expression::Ap)), _env);
-      obj3.body() = Object(body(), _env).weakNormalForm()._expr;
-      obj3.arg()  = Object(arg(), _env).normalForm()._expr;
-      return (*this) = obj3;
-    }
+Object normalForm(Object& obj){
+  if(obj.type() == Object::Primitive){
+    /* TODO */
   }else{
-    cerr << "[Weak Normal Form] Unexpected Expression type: " << _expr->type << endl;
-    exit(1);
+    obj = normalForm(obj.env(), obj.expr());
+    return obj;
+  }
+}
+
+Object Object::call(const Context& env, const Expression& expr) const {
+  if(type() == Primitive){
+    /* TODO */
+  }else{
+    if(_expr.isLam()){
+      return Object(_env.insert(_expr.name, Object(env, expr)), *_expr.body);
+    }else{
+      cerr << "[Object call] Object not callable (not a `Lambda`): " << _expr.type << endl;
+      exit(1);
+    }
+  }
+}
+
+Object weakNormalForm(const Context& env, const Expression& expr){
+  if( expr.isVar() ){
+    if( env.exist(expr.name) ){
+      return weakNormalForm(env[expr.name]);
+    }else{
+      return Object(expr);
+    }
+  }else if( expr.isLam() ){
+    return Object(env, expr);
+  }else if( expr.isAp() ){
+    Object callee(weakNormalForm(env, *expr.body));
+    if(callee.callable()){
+      auto res = callee.call(env, *expr.arg);
+      return weakNormalForm(res);
+    }else{
+      Expression expr2(Expression::Ap);
+      expr2.body.reset(new Expression(callee.expr()));
+      expr2.arg.reset(new Expression(normalForm(env, *expr.arg).expr()));
+      return Object(env, expr2);
+    }
+  }
+}
+
+Object normalForm(const Context& env, const Expression& expr){
+  if( expr.isVar() ){
+    if( env.exist(expr.name) ){
+      return normalForm(env[expr.name]);
+    }else{
+      return Object(expr);
+    }
+  }else if( expr.isLam() ){
+    Expression expr2(expr);
+    expr2.body.reset( new Expression(normalForm(env.erase( expr.name ), *expr.body).expr()) );
+    return Object(env, expr2);
+  }else if( expr.isAp() ){
+    Object callee(weakNormalForm(env, *expr.body));
+    if(callee.callable()){
+      auto res = callee.call(env, *expr.arg);
+      return normalForm(res);
+    }else{
+      Expression expr2(Expression::Ap);
+      expr2.body.reset(new Expression(callee.expr()));
+      expr2.arg.reset(new Expression(normalForm(env, *expr.arg).expr()));
+      return Object(env, expr2);
+    }
   }
 }
 
 int main(int argc, char *argv[])
 {
-  shared_ptr<Context> prelude(new Context);
+  using_history();
 
-  prelude->add("bool", "\\x x true false");
-  prelude->add("true", "\\a \\b a");
-  prelude->add("false", "\\a \\b b");
-  prelude->add("if", "\\pred \\then \\else pred then else");
-  prelude->add("not", "\\x x false true");
-  prelude->add("and", "\\x \\y x y false");
-  prelude->add("or", "\\x \\y x true y");
-  prelude->add("Y", "\\f (\\x f (x x)) (\\x f (x x))");
+
+  Context prelude;
+
+  prelude.add("bool", "\\x x true false");
+  prelude.add("true", "\\a \\b a");
+  prelude.add("false", "\\a \\b b");
+  prelude.add("if", "\\pred \\then \\else pred then else");
+  prelude.add("not", "\\x x false true");
+  prelude.add("and", "\\x \\y x y false");
+  prelude.add("or", "\\x \\y x true y");
+  prelude.add("Y", "\\f (\\x f (x x)) (\\x f (x x))");
 
 
   int bracketCount = 0;
@@ -377,8 +427,10 @@ int main(int argc, char *argv[])
       }else if(*it == ')'){
         --bracketCount;
       }
-      if(*it != ' ' && *it != '\t' && *it != '\n')
+      if(*it != ' ' && *it != '\t' && *it != '\n'){
         allSpace = false;
+        add_history(input.c_str());
+      }
     }
 
     if(bracketCount == 0){
@@ -399,7 +451,7 @@ int main(int argc, char *argv[])
       cout << endl;
       */
 
-      Object(expr, prelude).normalForm()._expr->prettyPrint();
+      normalForm(prelude, *expr).expr().prettyPrint();
       cout << endl;
 
     }
@@ -415,7 +467,7 @@ void Expression::print() const {
       cerr << "[Expression] Unexpected expression type: Nothing" << endl;
       break;
 
-    case Int:
+    case Constant:
       cout << "[\"int\"," << val << "]";
       break;
 
@@ -446,7 +498,7 @@ void Expression::prettyPrint() const {
       cout << name;
       return ;
 
-    case Int:
+    case Constant:
       cout << val;
       return ;
 
