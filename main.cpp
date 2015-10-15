@@ -19,6 +19,8 @@ using Parsers::Parser;
 using Parsers::satisfy;
 using Parsers::anyChar;
 using Parsers::spaces;
+using Parsers::oneOf;
+using Parsers::digit;
 
 const Parser alpha(satisfy([](char c){
   if(isgraph(c) && c != '(' && c != ')' && c != '\\'){
@@ -27,6 +29,7 @@ const Parser alpha(satisfy([](char c){
   return false;
 }));
 
+const Parser integer(maybe(oneOf("+-")) >> +digit);
 const Parser identifier(+alpha);
 const Parser lambda('\\');
 const Parser leftBracket('(');
@@ -35,7 +38,7 @@ const Parser panic(anyChar[ ([](const string& str){ cerr << "[Lex] Unexpected in
 
 class Token{
   public:
-    enum Type{Undefined, Identifier, Lambda, LeftBracket, RightBracket, EndOfFile} type;
+    enum Type{Undefined, Identifier, Integer, Lambda, LeftBracket, RightBracket, EndOfFile} type;
     std::string name;
 
     Token() : type(Undefined), name() {}
@@ -48,7 +51,8 @@ Parser tokenParser(Token& token){
   auto f = [&token](Token::Type t){
     return [&token, t](const string& str){ token = Token(t, str);};
   };
-  return (identifier[f(Token::Identifier)]
+  return (integer[f(Token::Integer)]
+      | identifier[f(Token::Identifier)]
       | lambda[f(Token::Lambda)]
       | leftBracket[f(Token::LeftBracket)]
       | rightBracket[f(Token::RightBracket)]
@@ -94,7 +98,9 @@ class Scanner{
 
 class Expression{
   public:
-    enum Type{Nothing, Var, Lambda, Ap} type;
+    enum Type{Nothing, Var, Int, Lambda, Ap} type;
+
+    int val;
     string name;
     shared_ptr<Expression> body, arg;
 
@@ -105,9 +111,27 @@ class Expression{
     bool isVar() const { return type == Var;}
     bool isLam() const { return type == Lambda;}
     bool isAp() const { return type == Ap;}
+    bool isInt() const { return type == Int;}
+
     void print() const ;
     void prettyPrint() const ;
 };
+
+int fromString(const string& str){
+  int sign = 1;
+  int i = 0;
+  if(str[0] == '+'){
+    ++i;
+  }else if(str[0] == '-'){
+    ++i;
+    sign = -1;
+  }
+  int res = 0;
+  for(; i < str.size(); ++i){
+    res = res * 10 + str[i] - '0';
+  }
+  return sign * res;
+}
 
 shared_ptr<Expression> parseExpression(Scanner&);
 shared_ptr<Expression> parseExpressionTail(Scanner&);
@@ -147,6 +171,12 @@ shared_ptr<Expression> parseExpressionTail(Scanner &scanner){
     case Token::Identifier:
       expr.reset(new Expression(Expression::Var));
       expr->name = token.name;
+      return expr;
+
+    case Token::Integer:
+      expr.reset(new Expression(Expression::Int));
+      expr->name = token.name;
+      expr->val = fromString(token.name);
       return expr;
 
     case Token::LeftBracket:
@@ -260,6 +290,8 @@ Object Object::weakNormalForm(){
     }else{
       return (*this) = Object(_expr);
     }
+  }else if(_expr->isInt()){
+    return (*this) = Object(_expr);
   }else if(_expr->isLam()){
     return *this;
   }else if(_expr->isAp()){
@@ -286,6 +318,8 @@ Object Object::normalForm(){
     }else{
       return (*this) = Object(_expr);
     }
+  }else if(_expr->isInt()){
+    return (*this) = Object(_expr);
   }else if(_expr->isLam()){
     Object obj2(shared_ptr<Expression>(new Expression(*_expr)), _env);
     obj2.body() = Object(body(), _env->erase(name())).normalForm()._expr;
@@ -358,13 +392,16 @@ int main(int argc, char *argv[])
       allSpace = true;
 
       shared_ptr<Expression> expr = parseExpression(scanner);
+
       /*
       expr->print();
       cout << endl;
       cout << endl;
       */
+
       Object(expr, prelude).normalForm()._expr->prettyPrint();
       cout << endl;
+
     }
   }
 
@@ -376,6 +413,10 @@ void Expression::print() const {
   switch(type){
     case Nothing:
       cerr << "[Expression] Unexpected expression type: Nothing" << endl;
+      break;
+
+    case Int:
+      cout << "[\"int\"," << val << "]";
       break;
 
     case Var:
@@ -400,20 +441,31 @@ void Expression::print() const {
 }
 
 void Expression::prettyPrint() const {
-  if(isVar()){
-    cout << name;
-  }else if(isLam()){
-    cout << "\\" << name << " ";
-    body->prettyPrint();
-  }else if(isAp()){
-    if(body->isLam() || body->isAp()) cout << "(";
-    body->prettyPrint();
-    if(body->isLam() || body->isAp()) cout << ")";
-    cout << " ";
-    if(arg->isLam() || arg->isAp()) cout << "(";
-    arg->prettyPrint();
-    if(arg->isLam() || arg->isAp()) cout << ")";
-  }else{
-    cerr << "[Expression] Unexpected expression type: Nothing" << endl;
+  switch(type){
+    case Var:
+      cout << name;
+      return ;
+
+    case Int:
+      cout << val;
+      return ;
+
+    case Lambda:
+      cout << "\\" << name << " ";
+      body->prettyPrint();
+      return ;
+
+    case Ap:
+      if(body->isLam() || body->isAp()) cout << "(";
+      body->prettyPrint();
+      if(body->isLam() || body->isAp()) cout << ")";
+      cout << " ";
+      if(arg->isLam() || arg->isAp()) cout << "(";
+      arg->prettyPrint();
+      if(arg->isLam() || arg->isAp()) cout << ")";
+      return ;
+
+    default:
+      cerr << "[Expression] Unexpected expression type: Nothing" << endl;
   }
 }

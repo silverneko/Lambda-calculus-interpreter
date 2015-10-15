@@ -4,7 +4,7 @@ CFLAGS = -std=c++11 -lreadline -Wall
 
 all: main
 
-main: main.cpp
+main: main.cpp Parsers.hpp
 	$(CC) $(CFLAGS) -o main main.cpp
 
 clean:

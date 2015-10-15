@@ -69,6 +69,15 @@ Parser noneOf(const std::string&);
 Parser operator >> (Parser, Parser);
 Parser operator | (Parser, Parser);
 Parser say(const std::string&, std::function<void (const std::string&)>);
+Parser maybe(Parser);
+
+const Parser nothing([](Parser::Iterator _, Parser::Iterator __){
+  return goodParse(_);
+});
+
+Parser maybe(Parser parser){
+  return (parser | nothing);
+}
 
 Parser::Parser(char c) : Parser(charp(c)) {
 }
@@ -135,8 +144,9 @@ Parser operator >> (Parser f, Parser g){
 Parser operator | (Parser f, Parser g){
   return Parser([f, g](Parser::Iterator first, Parser::Iterator last){
     bool good;
-    std::tie(good, first) = f.runParser(first, last);
-    if(good) return goodParse(first);
+    Parser::Iterator _first;
+    std::tie(good, _first) = f.runParser(first, last);
+    if(good) return goodParse(_first);
     std::tie(good, first) = g.runParser(first, last);
     if(good) return goodParse(first);
     return badParse(first);
