@@ -309,26 +309,6 @@ Object Object::normalForm(){
 
 int main(int argc, char *argv[])
 {
-  string rawInput;
-  while(true){
-    char *input = readline("Prelude> ");
-    if(input == nullptr){
-      cout << endl;
-      break;
-    }
-    rawInput += input;
-    rawInput += "\n";
-    free(input);
-  }
-
-  Scanner scanner(rawInput);
-
-  shared_ptr<Expression> expr = parseExpression(scanner);
-
-  expr->print();
-  cout << endl;
-  cout << endl;
-
   shared_ptr<Context> prelude(new Context);
 
   prelude->add("bool", "\\x x true false");
@@ -340,10 +320,55 @@ int main(int argc, char *argv[])
   prelude->add("or", "\\x \\y x true y");
   prelude->add("Y", "\\f (\\x f (x x)) (\\x f (x x))");
 
-  Object(expr, prelude).normalForm()._expr->prettyPrint();
-  cout << endl;
 
-  cout << "\nLeaving main\n";
+  int bracketCount = 0;
+  bool allSpace = true;
+  string rawInput;
+  while(true){
+    char *_input = readline(allSpace ? "Prelude> " : "Prelude| ");
+    if(_input == nullptr){
+      cout << endl;
+      break;
+      continue;
+    }
+    string input(_input);
+    free(_input);
+
+    rawInput += input;
+    rawInput += "\n";
+
+    for(auto it = input.begin(); it != input.end(); ++it){
+      if(*it == '('){
+        ++bracketCount;
+      }else if(*it == ')'){
+        --bracketCount;
+      }
+      if(*it != ' ' && *it != '\t' && *it != '\n')
+        allSpace = false;
+    }
+
+    if(bracketCount == 0){
+      if(allSpace){
+        rawInput = "";
+        continue;
+      }
+
+      Scanner scanner(rawInput);
+      rawInput = "";
+      allSpace = true;
+
+      shared_ptr<Expression> expr = parseExpression(scanner);
+      /*
+      expr->print();
+      cout << endl;
+      cout << endl;
+      */
+      Object(expr, prelude).normalForm()._expr->prettyPrint();
+      cout << endl;
+    }
+  }
+
+  cout << "Goodbye." << endl;
   return 0;
 }
 
