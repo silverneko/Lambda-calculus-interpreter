@@ -13,6 +13,7 @@
 #include <readline/readline.h>
 #include <readline/history.h>
 #include "Parsers.hpp"
+#include "Dictionary.hpp"
 
 using namespace std;
 
@@ -221,10 +222,12 @@ class Object;
 class Context;
 
 class Context{
-    unordered_map<string, shared_ptr<Object>> _env;
+    // unordered_map<string, shared_ptr<Object>> _env;
+    Dictionary<shared_ptr<Object>> _env;
   public:
     Context() {}
     Context(const Context& context) : _env(context._env) {}
+    Context(const Dictionary<shared_ptr<Object>>& d) : _env(d) {}
 
     Context& add(const string&, const string&);
     Context insert(const string&, const Object&) const;
@@ -272,20 +275,30 @@ class Object{
 Context& Context::add(const string& name, const string& rule) {
   Scanner scanner(rule);
   auto expr = parseExpression(scanner);
-  _env[name].reset(new Object(*this, *expr));
+  *this = _env.insert(name, shared_ptr<Object>(new Object(*this, *expr)));
   return *this;
 }
 
 Context Context::insert(const string& str, const Object& obj) const {
+  Context env;
+  env._env = this->_env.insert(str, shared_ptr<Object>(new Object(obj)));
+  return env;
+  /*
   Context env(*this);
   env._env[str].reset(new Object(obj));
   return env;
+  */
 }
 
 Context Context::erase(const string& str) const {
+  Context env;
+  env._env = this->_env.erase(str);
+  return env;
+  /*
   Context env(*this);
   env._env.erase(str);
   return env;
+  */
 }
 
 Object& Context::lookup(const string& str) const {
@@ -293,17 +306,28 @@ Object& Context::lookup(const string& str) const {
 }
 
 Object& Context::operator [] (const string& str) const {
+  if(_env.exist(str)){
+    return *_env[str];
+  }else{
+    cerr << "[Context lookup] Unbounded variable: " << str << endl;
+    exit(1);
+  }
+  /*
   auto it = _env.find(str);
   if(it == _env.cend()){
     cerr << "[Context lookup] Unbounded variable: " << str << endl;
     exit(1);
   }
   return *(it->second);
+  */
 }
 
 bool Context::exist(const string& str) const {
+  return _env.exist(str);
+  /*
   if(_env.count(str) > 0) return true;
   return false;
+  */
 }
 
 Object weakNormalForm(const Context& env, const Expression& expr);
