@@ -239,43 +239,37 @@ class Context{
 
 class Object{
   public:
-    using Func = function<Object(const Context&, const Expression&)>;
-    enum Type{Primitive, Ordinary};
+    using Func = function<tuple<Context, Expression>(const Expression&, const Context&)>;
+    enum Type{Primitive, Closure, NormalForm};
   private:
     Type _type;
-    Context _env;
     Expression _expr;
+    Context _env;
     Func _func;
+
+    Object(Type t, const Expression& expr) : _type(t), _expr(expr) {}
   public:
-    Object(const Expression& expr) : _type(Ordinary), _expr(expr) {}
-    Object(const Context& env, const Expression& expr) : _type(Ordinary), _env(env), _expr(expr) {}
+    Object(const Expression& expr) : _type(Closure), _expr(expr), _env() {}
+    Object(const Expression& expr, const Context& env) : _type(Closure), _expr(expr), _env(env) {}
     Object(const Func& func) : _type(Primitive), _func(func) {}
 
     const Expression& expr() const { return _expr;}
     const Context& env() const { return _env;}
 
-    Object call(const Context& env, const Expression& expr) const;
-    bool callable() const {
-      if(type() == Primitive){
-        /* TODO */
-      }else{
-        if(_expr.isLam()){
-          return true;
-        }else{
-          return false;
-        }
-      }
-    }
-    Type type() const { return _type;}
+    Object call(const Expression& expr, const Context& env) const;
 
-    // friend Object weakNormalForm(Object&);
-    // friend Object normalForm(Object&);
+    bool callable() const;
+
+    Type type() const { return _type;}
+    bool isNormalForm() const { return _type == NormalForm;}
+
+    friend Object makeNormalForm(const Expression&);
 };
 
 Context& Context::add(const string& name, const string& rule) {
   Scanner scanner(rule);
   auto expr = parseExpression(scanner);
-  *this = _env.insert(name, shared_ptr<Object>(new Object(*this, *expr)));
+  *this = _env.insert(name, shared_ptr<Object>(new Object(*expr, *this)));
   return *this;
 }
 
@@ -283,22 +277,12 @@ Context Context::insert(const string& str, const Object& obj) const {
   Context env;
   env._env = this->_env.insert(str, shared_ptr<Object>(new Object(obj)));
   return env;
-  /*
-  Context env(*this);
-  env._env[str].reset(new Object(obj));
-  return env;
-  */
 }
 
 Context Context::erase(const string& str) const {
   Context env;
   env._env = this->_env.erase(str);
   return env;
-  /*
-  Context env(*this);
-  env._env.erase(str);
-  return env;
-  */
 }
 
 Object& Context::lookup(const string& str) const {
@@ -312,32 +296,49 @@ Object& Context::operator [] (const string& str) const {
     cerr << "[Context lookup] Unbounded variable: " << str << endl;
     exit(1);
   }
-  /*
-  auto it = _env.find(str);
-  if(it == _env.cend()){
-    cerr << "[Context lookup] Unbounded variable: " << str << endl;
-    exit(1);
-  }
-  return *(it->second);
-  */
 }
 
 bool Context::exist(const string& str) const {
   return _env.exist(str);
-  /*
-  if(_env.count(str) > 0) return true;
-  return false;
-  */
 }
 
-Object weakNormalForm(const Context& env, const Expression& expr);
-Object normalForm(const Context& env, const Expression& expr);
+bool Object::callable() const {
+  if(type() == Primitive){
+    /* TODO */
+  }else{
+    if(_expr.isLam()){
+      return true;
+    }else{
+      return false;
+    }
+  }
+}
+
+Object Object::call(const Expression& expr, const Context& env) const {
+  if(type() == Primitive){
+    /* TODO */
+  }else{
+    if(_expr.isLam()){
+      return Object(*_expr.body, _env.insert(_expr.name, Object(expr, env)));
+    }else{
+      cerr << "[Object call] Object not callable (not a `Lambda`): " << _expr.type << endl;
+      exit(1);
+    }
+  }
+}
+
+Object makeNormalForm(const Expression& expr){
+  return Object(Object::NormalForm, expr);
+}
+
+Object weakNormalForm(const Expression& expr, const Context& env);
+Object normalForm(const Expression& expr, const Context& env);
 
 Object weakNormalForm(Object& obj){
   if(obj.type() == Object::Primitive){
     /* TODO */
   }else{
-    obj = weakNormalForm(obj.env(), obj.expr());
+    obj = weakNormalForm(obj.expr(), obj.env());
     return obj;
   }
 }
@@ -346,68 +347,66 @@ Object normalForm(Object& obj){
   if(obj.type() == Object::Primitive){
     /* TODO */
   }else{
-    obj = normalForm(obj.env(), obj.expr());
+    obj = normalForm(obj.expr(), obj.env());
     return obj;
   }
 }
 
-Object Object::call(const Context& env, const Expression& expr) const {
-  if(type() == Primitive){
-    /* TODO */
-  }else{
-    if(_expr.isLam()){
-      return Object(_env.insert(_expr.name, Object(env, expr)), *_expr.body);
-    }else{
-      cerr << "[Object call] Object not callable (not a `Lambda`): " << _expr.type << endl;
-      exit(1);
-    }
-  }
-}
-
-Object weakNormalForm(const Context& env, const Expression& expr){
+Object weakNormalForm(const Expression& expr, const Context& env){
   if( expr.isVar() ){
     if( env.exist(expr.name) ){
-      return weakNormalForm(env[expr.name]);
+      // return weakNormalForm( env[expr.name] );
+      Object& res = env[expr.name];
+      res = weakNormalForm( res.expr(), res.env() );
+      return res;
     }else{
-      return Object(expr);
+      return makeNormalForm( expr );
     }
   }else if( expr.isLam() ){
-    return Object(env, expr);
+    return Object(expr, env);
   }else if( expr.isAp() ){
-    Object callee(weakNormalForm(env, *expr.body));
-    if(callee.callable()){
-      auto res = callee.call(env, *expr.arg);
-      return weakNormalForm(res);
+    const Expression& body = *expr.body;
+    const Expression& arg = *expr.arg;
+    Object callee(weakNormalForm(body, env));
+    if( callee.callable() ){
+      Object res = callee.call(arg, env);
+      return weakNormalForm(res.expr(), res.env());
     }else{
       Expression expr2(Expression::Ap);
       expr2.body.reset(new Expression(callee.expr()));
-      expr2.arg.reset(new Expression(normalForm(env, *expr.arg).expr()));
-      return Object(env, expr2);
+      expr2.arg.reset(new Expression(normalForm(arg, env).expr()));
+      return makeNormalForm( expr2 );
     }
   }
 }
 
-Object normalForm(const Context& env, const Expression& expr){
+Object normalForm(const Expression& expr, const Context& env){
   if( expr.isVar() ){
     if( env.exist(expr.name) ){
-      return normalForm(env[expr.name]);
+      // return normalForm(env[expr.name]);
+      Object &res = env[expr.name];
+      res = normalForm( res.expr(), res.env() );
+      return res;
     }else{
-      return Object(expr);
+      return makeNormalForm( expr );
     }
   }else if( expr.isLam() ){
     Expression expr2(expr);
-    expr2.body.reset( new Expression(normalForm(env.erase( expr.name ), *expr.body).expr()) );
-    return Object(env, expr2);
+    expr2.body.reset( new Expression(normalForm(*expr.body, env.erase( expr.name )).expr()) );
+    // return Object(expr2, env);
+    return makeNormalForm( expr2 );
   }else if( expr.isAp() ){
-    Object callee(weakNormalForm(env, *expr.body));
-    if(callee.callable()){
-      auto res = callee.call(env, *expr.arg);
-      return normalForm(res);
+    const Expression& body = *expr.body;
+    const Expression& arg = *expr.arg;
+    Object callee(weakNormalForm(body, env));
+    if( callee.callable() ){
+      Object res = callee.call(arg, env);
+      return normalForm(res.expr(), res.env());
     }else{
       Expression expr2(Expression::Ap);
       expr2.body.reset(new Expression(callee.expr()));
-      expr2.arg.reset(new Expression(normalForm(env, *expr.arg).expr()));
-      return Object(env, expr2);
+      expr2.arg.reset(new Expression(normalForm(arg, env).expr()));
+      return makeNormalForm( expr2 );
     }
   }
 }
@@ -475,7 +474,7 @@ int main(int argc, char *argv[])
       cout << endl;
       */
 
-      normalForm(prelude, *expr).expr().prettyPrint();
+      normalForm(*expr, prelude).expr().prettyPrint();
       cout << endl;
 
     }
