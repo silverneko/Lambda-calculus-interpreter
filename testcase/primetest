@@ -1,0 +1,92 @@
+:let [] (\s \z z)
+:let cons (\x \xs \s \z s x xs)
+:let head (\ls ls (\a \_ a) _ )
+:let tail (\ls ls (\_ \b b) _ )
+:let empty (\ls ls (\_\_ false) true)
+
+:let : cons
+
+:let take Y(\take \n \ls 
+    if (== n 0) 
+      []
+      (: (head ls) (take (- n 1) (tail ls)))
+    )
+
+:let map Y(\map \f \ls
+    if (empty ls)
+      []
+      (: (f (head ls)) (map f (tail ls)))
+    )
+
+:let zipWith Y(\zipWith \f \xs \ys
+    if (or (empty xs) (empty ys))
+      []
+      (let z (f (head xs) (head ys)) in
+        (let zs (zipWith f (tail xs) (tail ys)) in
+          (:  z zs)
+        )
+      )
+    )
+
+:let !! Y(\!! \ls \n
+    if (== n 0)
+      (head ls)
+      (!! (tail ls) (- n 1))
+    )
+
+-- pretty print a list
+:let pretty-list Y(\pretty-list \ls
+    if(empty ls)
+      nil
+      ((head ls) (pretty-list (tail ls)))
+    )
+
+:let filter Y(\filter \siev \ls
+    if (empty ls)
+      []
+      (
+        let x (head ls) in (
+          let xs (tail ls) in (
+            if (siev x)
+              (: x (filter siev xs))
+              (filter siev xs)
+          )
+        )
+      )
+    )
+
+:let natural-numbers Y(\natural-numbers (: 1 (map (+ 1) natural-numbers)))
+:let range Y(\range \a \b if(== a b) [] (: a (range (+ a 1) b)))
+:let is-prime (\n
+    if(or (== n 0) (== n 1))
+      false
+      (
+        if(== n 2)
+          true
+          (
+            (Y \is-prime \try \n
+              if (== n try)
+                true
+              (
+                if (== 0 (% n try))
+                  false
+                  (is-prime (+ 1 try) n)
+              )
+            ) 2 n
+          )
+      )
+    )
+
+is-prime 1
+is-prime 2
+is-prime 3
+is-prime 4
+is-prime 7
+is-prime 8
+is-prime 12
+
+:let primes (filter is-prime natural-numbers)
+
+pretty-list (take 40 primes)
+pretty-list (take 150 natural-numbers)
+pretty-list (take 300 natural-numbers)
