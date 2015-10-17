@@ -1,0 +1,56 @@
+:let [] (\s \z z)
+:let cons (\x \xs \s \z s x xs)
+:let head (\ls ls (\a \_ a) _ )
+:let tail (\ls ls (\_ \b b) _ )
+:let empty (\ls ls (\_\_ false) true)
+
+:let : cons
+
+:let take Y(\take \n \ls 
+    if (== n 0) 
+      []
+      (: (head ls) (take (- n 1) (tail ls)))
+    )
+
+:let map Y(\map \f \ls
+    if (empty ls)
+      []
+      (: (f (head ls)) (map f (tail ls)))
+    )
+
+:let zipWith Y(\zipWith \f \xs \ys
+    if (or (empty xs) (empty ys))
+      []
+      (: (f (head xs) (head ys)) (zipWith f (tail xs) (tail ys)))
+    )
+
+:let !! Y(\!! \ls \n
+    if (== n 0)
+      (head ls)
+      (!! (tail ls) (- n 1))
+    )
+
+:let fibs Y(\fibs (: 1 (: 1 (zipWith (+) fibs (tail fibs)))))
+:let fib (\n !! fibs n)
+
+fib 0
+fib 1
+fib 2
+fib 3
+fib 4
+fib 5
+fib 6
+fib 7
+fib 8
+fib 9
+fib 10
+fib 40
+
+:let pretty-list Y(\pretty-list \ls
+    if(empty ls)
+    (nil)
+    ((head ls) (pretty-list (tail ls)))
+    )
+
+pretty-list (take 100 fibs)
+pretty-list (take 100 fibs)

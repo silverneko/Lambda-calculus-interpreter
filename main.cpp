@@ -8,6 +8,7 @@
 #include <map>
 #include <unordered_map>
 #include <memory>
+#include <sstream>
 
 #include <cstdio>
 #include <readline/readline.h>
@@ -40,7 +41,7 @@ const Parser panic(anyChar[ ([](const string& str){ cerr << "[Lex] Unexpected in
 
 class Token{
   public:
-    enum Type{Undefined, Identifier, Integer, Lambda, LeftBracket, RightBracket, EndOfFile} type;
+    enum Type{Undefined, Constant, Identifier, Lambda, LeftBracket, RightBracket, EndOfFile} type;
     std::string name;
 
     Token() : type(Undefined), name() {}
@@ -53,8 +54,8 @@ Parser tokenParser(Token& token){
   auto f = [&token](Token::Type t){
     return [&token, t](const string& str){ token = Token(t, str);};
   };
-  return (/*integer[f(Token::Integer)]
-      |*/ identifier[f(Token::Identifier)]
+  return (integer[f(Token::Constant)]
+      | identifier[f(Token::Identifier)]
       | lambda[f(Token::Lambda)]
       | leftBracket[f(Token::LeftBracket)]
       | rightBracket[f(Token::RightBracket)]
@@ -98,6 +99,21 @@ class Scanner{
     }
 };
 
+template<class T>
+T stringTo(const string& str){
+  istringstream iss(str);
+  T res;
+  iss >> res;
+  return res;
+}
+
+template<class T>
+string toString(const T& t){
+  ostringstream oss;
+  oss << t;
+  return oss.str();
+}
+
 class Expression{
   public:
     enum Type{Nothing, Var, Constant, Lambda, Ap} type;
@@ -108,6 +124,8 @@ class Expression{
 
     Expression() : type(Nothing), name(), body(), arg() {}
     Expression(Type t) : type(t), name(), body(), arg() {}
+    Expression(int v) : type(Constant), val(v), name(toString(v)) {}
+    Expression(const string& str) : type(Var), name(str) {}
     Expression(const Expression& expr) : type(expr.type), val(expr.val), name(expr.name), body(expr.body), arg(expr.arg) {}
 
     bool isVar() const { return type == Var;}
@@ -118,22 +136,6 @@ class Expression{
     void print() const ;
     void prettyPrint() const ;
 };
-
-int fromString(const string& str){
-  int sign = 1;
-  int i = 0;
-  if(str[0] == '+'){
-    ++i;
-  }else if(str[0] == '-'){
-    ++i;
-    sign = -1;
-  }
-  int res = 0;
-  for(; i < str.size(); ++i){
-    res = res * 10 + str[i] - '0';
-  }
-  return sign * res;
-}
 
 shared_ptr<Expression> parseExpression(Scanner&);
 shared_ptr<Expression> parseExpressionTail(Scanner&);
@@ -175,10 +177,10 @@ shared_ptr<Expression> parseExpressionTail(Scanner &scanner){
       expr->name = token.name;
       return expr;
 
-    case Token::Integer:
+    case Token::Constant:
       expr.reset(new Expression(Expression::Constant));
       expr->name = token.name;
-      expr->val = fromString(token.name);
+      expr->val = stringTo<int>(token.name);
       return expr;
 
     case Token::LeftBracket:
@@ -230,6 +232,7 @@ class Context{
     Context(const Dictionary<shared_ptr<Object>>& d) : _env(d) {}
 
     Context& add(const string&, const string&);
+    Context& add(const string&, const Object&);
     Context insert(const string&, const Object&) const;
     Context erase(const string&) const;
     Object& lookup(const string&) const;
@@ -239,7 +242,7 @@ class Context{
 
 class Object{
   public:
-    using Func = function<tuple<Context, Expression>(const Expression&, const Context&)>;
+    using Func = function<Object(const Expression&, const Context&)>;
     enum Type{Primitive, Closure, NormalForm};
   private:
     Type _type;
@@ -262,6 +265,7 @@ class Object{
 
     Type type() const { return _type;}
     bool isNormalForm() const { return _type == NormalForm;}
+    bool isPrimitive() const { return _type == Primitive;}
 
     friend Object makeNormalForm(const Expression&);
 };
@@ -269,20 +273,20 @@ class Object{
 Context& Context::add(const string& name, const string& rule) {
   Scanner scanner(rule);
   auto expr = parseExpression(scanner);
-  *this = _env.insert(name, shared_ptr<Object>(new Object(*expr, *this)));
+  return add(name, Object(*expr, *this));
+}
+
+Context& Context::add(const string& name, const Object& rule){
+  *this = _env.insert(name, shared_ptr<Object>(new Object(rule)));
   return *this;
 }
 
 Context Context::insert(const string& str, const Object& obj) const {
-  Context env;
-  env._env = this->_env.insert(str, shared_ptr<Object>(new Object(obj)));
-  return env;
+  return this->_env.insert(str, shared_ptr<Object>(new Object(obj)));
 }
 
 Context Context::erase(const string& str) const {
-  Context env;
-  env._env = this->_env.erase(str);
-  return env;
+  return this->_env.erase(str);
 }
 
 Object& Context::lookup(const string& str) const {
@@ -305,6 +309,7 @@ bool Context::exist(const string& str) const {
 bool Object::callable() const {
   if(type() == Primitive){
     /* TODO */
+    return true;
   }else{
     if(_expr.isLam()){
       return true;
@@ -317,6 +322,7 @@ bool Object::callable() const {
 Object Object::call(const Expression& expr, const Context& env) const {
   if(type() == Primitive){
     /* TODO */
+    return _func(expr, env);
   }else{
     if(_expr.isLam()){
       return Object(*_expr.body, _env.insert(_expr.name, Object(expr, env)));
@@ -333,6 +339,7 @@ Object makeNormalForm(const Expression& expr){
 
 Object weakNormalForm(const Expression& expr, const Context& env);
 Object normalForm(const Expression& expr, const Context& env);
+
 
 Object weakNormalForm(Object& obj){
   if(obj.type() == Object::Primitive){
@@ -353,11 +360,13 @@ Object normalForm(Object& obj){
 }
 
 Object weakNormalForm(const Expression& expr, const Context& env){
-  if( expr.isVar() ){
+  if( expr.isNum() ){
+    return makeNormalForm( expr );
+  }else if( expr.isVar() ){
     if( env.exist(expr.name) ){
-      // return weakNormalForm( env[expr.name] );
       Object& res = env[expr.name];
-      res = weakNormalForm( res.expr(), res.env() );
+      if( !res.isPrimitive() )
+        res = weakNormalForm( res.expr(), res.env() );
       return res;
     }else{
       return makeNormalForm( expr );
@@ -370,6 +379,8 @@ Object weakNormalForm(const Expression& expr, const Context& env){
     Object callee(weakNormalForm(body, env));
     if( callee.callable() ){
       Object res = callee.call(arg, env);
+      if( res.isPrimitive() )
+        return res;
       return weakNormalForm(res.expr(), res.env());
     }else{
       Expression expr2(Expression::Ap);
@@ -381,11 +392,13 @@ Object weakNormalForm(const Expression& expr, const Context& env){
 }
 
 Object normalForm(const Expression& expr, const Context& env){
-  if( expr.isVar() ){
+  if( expr.isNum() ){
+    return makeNormalForm( expr );
+  }else if( expr.isVar() ){
     if( env.exist(expr.name) ){
-      // return normalForm(env[expr.name]);
       Object &res = env[expr.name];
-      res = normalForm( res.expr(), res.env() );
+      if( !res.isPrimitive() )
+        res = normalForm( res.expr(), res.env() );
       return res;
     }else{
       return makeNormalForm( expr );
@@ -401,6 +414,8 @@ Object normalForm(const Expression& expr, const Context& env){
     Object callee(weakNormalForm(body, env));
     if( callee.callable() ){
       Object res = callee.call(arg, env);
+      if( res.isPrimitive() )
+        return res;
       return normalForm(res.expr(), res.env());
     }else{
       Expression expr2(Expression::Ap);
@@ -426,6 +441,56 @@ int main(int argc, char *argv[])
   prelude.add("and", "\\x \\y x y false");
   prelude.add("or", "\\x \\y x true y");
   prelude.add("Y", "\\f (\\x f (x x)) (\\x f (x x))");
+  prelude.add("hello", Object([](const Expression& expr, const Context& env){
+          Object res(normalForm(expr, env));
+          return Expression("\"Hello, " + res.expr().name + "!\"");
+        }));
+  prelude.add("+", Object([](const Expression& expr, const Context& env){
+          int a = normalForm(expr, env).expr().val;
+          return Object([a](const Expression& expr, const Context& env){
+              int b = normalForm(expr, env).expr().val;
+              return Expression( a + b );
+            });
+        }));
+  prelude.add("-", Object([](const Expression& expr, const Context& env){
+          int a = normalForm(expr, env).expr().val;
+          return Object([a](const Expression& expr, const Context& env){
+              int b = normalForm(expr, env).expr().val;
+              return Expression( a - b );
+            });
+        }));
+  prelude.add("*", Object([](const Expression& expr, const Context& env){
+          int a = normalForm(expr, env).expr().val;
+          return Object([a](const Expression& expr, const Context& env){
+              int b = normalForm(expr, env).expr().val;
+              return Expression( a * b );
+            });
+        }));
+  prelude.add("/", Object([](const Expression& expr, const Context& env){
+          int a = normalForm(expr, env).expr().val;
+          return Object([a](const Expression& expr, const Context& env){
+              int b = normalForm(expr, env).expr().val;
+              return Expression( a / b );
+            });
+        }));
+  prelude.add("%", Object([](const Expression& expr, const Context& env){
+          int a = normalForm(expr, env).expr().val;
+          return Object([a](const Expression& expr, const Context& env){
+              int b = normalForm(expr, env).expr().val;
+              return Expression( a % b );
+            });
+        }));
+  prelude.add("==", Object([prelude](const Expression& expr, const Context& env){
+          int a = normalForm(expr, env).expr().val;
+          return Object([prelude, a](const Expression& expr, const Context& env){
+              int b = normalForm(expr, env).expr().val;
+              if(a == b){
+                return Object(Expression("true"), env);
+              }else{
+                return Object(Expression("false"), env);
+              }
+            });
+        }));
 
 
   int bracketCount = 0;
@@ -466,6 +531,17 @@ int main(int argc, char *argv[])
       rawInput = "";
       allSpace = true;
 
+      if(scanner.peekToken().name == ":let"){
+        scanner.getToken();
+        Token token(scanner.getToken());
+        if(token.type != Token::Identifier){
+          cerr << "[Name bind] Expected an identifier: " << token.name << endl;
+          continue;
+        }
+        shared_ptr<Expression> expr = parseExpression(scanner);
+        prelude.add(token.name, {*expr, prelude});
+        continue;
+      }
       shared_ptr<Expression> expr = parseExpression(scanner);
 
       /*
