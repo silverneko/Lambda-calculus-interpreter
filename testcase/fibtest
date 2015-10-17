@@ -34,6 +34,7 @@
       (!! (tail ls) (- n 1))
     )
 
+-- test lazy evaluation
 :let fibs Y(\fibs (: 1 (: 1 (zipWith (+) fibs (tail fibs)))))
 :let fib (\n !! fibs n)
 
@@ -48,13 +49,15 @@ fib 7
 fib 8
 fib 9
 fib 10
-fib 40
 
+-- pretty print a list
 :let pretty-list Y(\pretty-list \ls
     if(empty ls)
     (nil)
     ((head ls) (pretty-list (tail ls)))
     )
 
+-- test if the fibonacci list is memorized after first evaluation
+-- the second `take 100 fibs` should be faster then the first one
 pretty-list (take 100 fibs)
 pretty-list (take 100 fibs)

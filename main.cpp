@@ -526,6 +526,22 @@ int main(int argc, char *argv[])
     string input(_input);
     free(_input);
 
+    bool isComment = false;
+    for(int i = 0; i < input.size(); ++i){
+      if(input[i] != ' ' && input[i] != '\t' && input[i] != '\n'){
+        if(input[i] == '-'){
+          if(i+1 < input.size() && input[i+1] == '-'){
+            isComment = true;
+          }
+        }
+        break;
+      }
+    }
+    if(isComment){
+      add_history(input.c_str());
+      continue;
+    }
+
     rawInput += input;
     rawInput += "\n";
 
