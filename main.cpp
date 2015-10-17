@@ -433,6 +433,26 @@ int main(int argc, char *argv[])
 
   Context prelude;
 
+  prelude.add("let", Object([](const Expression& expr, const Context& _){
+          // let x y in z
+          if( !expr.isVar() ){
+            cerr << "[let bind] Expected an identifier: " << expr.name << endl;
+            exit(1);
+          }
+          string varName(expr.name);
+          return Object([varName](const Expression& expr, const Context& env1){
+              Expression bindBody(expr);
+              return Object([varName, bindBody, env1](const Expression& expr, const Context& _){
+                  if(expr.name != "in"){
+                    cerr << "[let bind] Expected identifier `in`: " << expr.name << endl;
+                    exit(1);
+                  }
+                  return Object([varName, bindBody, env1](const Expression& expr, const Context& env){
+                      return Object(expr, env.insert(varName, {bindBody, env1}));
+                    });
+                });
+            });
+        }));
   prelude.add("bool", "\\x x true false");
   prelude.add("true", "\\a \\b a");
   prelude.add("false", "\\a \\b b");

@@ -21,7 +21,11 @@
 :let zipWith Y(\zipWith \f \xs \ys
     if (or (empty xs) (empty ys))
       []
-      (: (f (head xs) (head ys)) (zipWith f (tail xs) (tail ys)))
+      (let z (f (head xs) (head ys)) in
+        (let zs (zipWith f (tail xs) (tail ys)) in
+          (:  z zs)
+        )
+      )
     )
 
 :let !! Y(\!! \ls \n
