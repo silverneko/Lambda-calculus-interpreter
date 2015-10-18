@@ -56,7 +56,7 @@
     )
 
 :let natural-numbers Y(\natural-numbers (: 1 (map (+ 1) natural-numbers)))
-:let range Y(\range \a \b if(== a b) [] (: a (range (+ a 1) b)))
+:let range Y(\r \a \b if(== a b) (: a []) (: a (r (+ a 1) b)))
 :let is-prime (\n
     if(or (== n 0) (== n 1))
       false
@@ -77,16 +77,43 @@
       )
     )
 
-is-prime 1
-is-prime 2
-is-prime 3
-is-prime 4
-is-prime 7
-is-prime 8
-is-prime 12
+:let primes Y(\primes
+      let is-prime'' (\n (Y\is-prime' \primes
+          let p (head primes) in (
+              if(< n (* p p))
+                true
+                (if (== 0 (% n p))
+                  false
+                  (is-prime' (tail primes))
+                )
+            )
+        )
+        )
+      in (let is-prime (\n is-prime'' n primes) in
+          (: 2 (filter is-prime (. tail tail natural-numbers)))
+        )
+    )
 
-:let primes (filter is-prime natural-numbers)
+take 1 primes
+take 2 primes
+take 3 primes
+take 4 primes
+take 5 primes
+take 6 primes
 
-pretty-list (take 40 primes)
-pretty-list (take 150 natural-numbers)
-pretty-list (take 300 natural-numbers)
+-- pretty-list (take 40 primes)
+-- :let natural-numbers (range 1 1000)
+-- pretty-list (take 300 natural-numbers)
+-- pretty-list (take 300 (range 1 300))
+
+:let foldr Y(\fr \f \a \l
+    if(empty l)
+      a
+      (f (head l) (fr f a (tail l)))
+    )
+
+:let repeat Y(\r \x (: x (r x)))
+
+-- short circuit
+foldr * 1 (: 1 (: 2 (: 0 natural-numbers)))
+foldr and true (: true (: false (repeat true)))

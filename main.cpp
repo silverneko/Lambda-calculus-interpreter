@@ -340,34 +340,17 @@ Object makeNormalForm(const Expression& expr){
 Object weakNormalForm(const Expression& expr, const Context& env);
 Object normalForm(const Expression& expr, const Context& env);
 
-
-Object weakNormalForm(Object& obj){
-  if(obj.type() == Object::Primitive){
-    /* TODO */
-  }else{
-    obj = weakNormalForm(obj.expr(), obj.env());
-    return obj;
-  }
-}
-
-Object normalForm(Object& obj){
-  if(obj.type() == Object::Primitive){
-    /* TODO */
-  }else{
-    obj = normalForm(obj.expr(), obj.env());
-    return obj;
-  }
-}
-
 Object weakNormalForm(const Expression& expr, const Context& env){
   if( expr.isNum() ){
     return makeNormalForm( expr );
   }else if( expr.isVar() ){
     if( env.exist(expr.name) ){
       Object& res = env[expr.name];
-      if( !res.isPrimitive() )
-        res = weakNormalForm( res.expr(), res.env() );
-      return res;
+      if( res.isNormalForm() )
+        return res;
+      if( res.isPrimitive() )
+        return res;
+      return res = weakNormalForm( res.expr(), res.env() );
     }else{
       return makeNormalForm( expr );
     }
@@ -379,6 +362,8 @@ Object weakNormalForm(const Expression& expr, const Context& env){
     Object callee(weakNormalForm(body, env));
     if( callee.callable() ){
       Object res = callee.call(arg, env);
+      if( res.isNormalForm() )
+        return res;
       if( res.isPrimitive() )
         return res;
       return weakNormalForm(res.expr(), res.env());
@@ -388,6 +373,9 @@ Object weakNormalForm(const Expression& expr, const Context& env){
       expr2.arg.reset(new Expression(normalForm(arg, env).expr()));
       return makeNormalForm( expr2 );
     }
+  }else{
+    cerr << "[Weak normal form] Unexpected expression type: " << expr.type << endl;
+    exit(1);
   }
 }
 
@@ -397,9 +385,11 @@ Object normalForm(const Expression& expr, const Context& env){
   }else if( expr.isVar() ){
     if( env.exist(expr.name) ){
       Object &res = env[expr.name];
-      if( !res.isPrimitive() )
-        res = normalForm( res.expr(), res.env() );
-      return res;
+      if( res.isNormalForm() )
+        return res;
+      if( res.isPrimitive() )
+        return res;
+      return res = normalForm( res.expr(), res.env() );
     }else{
       return makeNormalForm( expr );
     }
@@ -414,6 +404,8 @@ Object normalForm(const Expression& expr, const Context& env){
     Object callee(weakNormalForm(body, env));
     if( callee.callable() ){
       Object res = callee.call(arg, env);
+      if( res.isNormalForm() )
+        return res;
       if( res.isPrimitive() )
         return res;
       return normalForm(res.expr(), res.env());
@@ -423,6 +415,9 @@ Object normalForm(const Expression& expr, const Context& env){
       expr2.arg.reset(new Expression(normalForm(arg, env).expr()));
       return makeNormalForm( expr2 );
     }
+  }else{
+    cerr << "[Normal form] Unexpected expression type: " << expr.type << endl;
+    exit(1);
   }
 }
 
@@ -460,7 +455,18 @@ int main(int argc, char *argv[])
   prelude.add("not", "\\x x false true");
   prelude.add("and", "\\x \\y x y false");
   prelude.add("or", "\\x \\y x true y");
-  prelude.add("Y", "\\f (\\x f (x x)) (\\x f (x x))");
+  // prelude.add("Y", "\\f (\\x f (x x)) (\\x f (x x))");
+  // y f = f (y f)
+  prelude.add("y", Object([](const Expression& expr, const Context& env){
+          Expression expr1( Expression::Ap );
+          expr1.body.reset(new Expression(expr));
+            Expression expr2( Expression::Ap );
+            expr2.body.reset(new Expression("y"));
+            expr2.arg.reset(new Expression(expr));
+          expr1.arg.reset(new Expression(expr2));
+          return Object(expr1, env);
+        }));
+  prelude.add("Y", "y");
   prelude.add("hello", Object([](const Expression& expr, const Context& env){
           Object res(normalForm(expr, env));
           return Expression("\"Hello, " + res.expr().name + "!\"");
@@ -482,6 +488,8 @@ int main(int argc, char *argv[])
   prelude.add("*", Object([](const Expression& expr, const Context& env){
           int a = normalForm(expr, env).expr().val;
           return Object([a](const Expression& expr, const Context& env){
+              if(a == 0)
+                return Expression( 0 );
               int b = normalForm(expr, env).expr().val;
               return Expression( a * b );
             });
@@ -511,7 +519,35 @@ int main(int argc, char *argv[])
               }
             });
         }));
-
+  prelude.add("$", "\\f \\g f g");
+  prelude.add("id", "\\x x");
+  prelude.add("flip", "\\f \\x \\y f y x");
+  prelude.add(".", "\\f \\g \\x f(g x)");
+  prelude.add("!=", "\\a . not (== a)");
+  prelude.add("<", Object([prelude](const Expression& expr, const Context& env){
+          int a = normalForm(expr, env).expr().val;
+          return Object([prelude, a](const Expression& expr, const Context& env){
+              int b = normalForm(expr, env).expr().val;
+              if(a < b){
+                return Object(Expression("true"), env);
+              }else{
+                return Object(Expression("false"), env);
+              }
+            });
+        }));
+  prelude.add("<=", Object([prelude](const Expression& expr, const Context& env){
+          int a = normalForm(expr, env).expr().val;
+          return Object([prelude, a](const Expression& expr, const Context& env){
+              int b = normalForm(expr, env).expr().val;
+              if(a <= b){
+                return Object(Expression("true"), env);
+              }else{
+                return Object(Expression("false"), env);
+              }
+            });
+        }));
+  prelude.add(">", "flip <");
+  prelude.add(">=", "flip >=");
 
   int bracketCount = 0;
   bool allSpace = true;
@@ -579,12 +615,6 @@ int main(int argc, char *argv[])
         continue;
       }
       shared_ptr<Expression> expr = parseExpression(scanner);
-
-      /*
-      expr->print();
-      cout << endl;
-      cout << endl;
-      */
 
       normalForm(*expr, prelude).expr().prettyPrint();
       cout << endl;
