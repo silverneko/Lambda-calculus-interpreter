@@ -23,7 +23,7 @@ using Parsers::anyChar;
 using Parsers::spaces;
 using Parsers::oneOf;
 using Parsers::digit;
-using Parsers::word;
+using Parsers::charp;
 
 const Parser alpha(satisfy([](char c){
   if(isgraph(c) && c != '\\' && c != '$' && c != '(' && c != ')'){
@@ -33,8 +33,7 @@ const Parser alpha(satisfy([](char c){
 }));
 
 const Parser integer(maybe(oneOf("+-")) >> +digit);
-const Parser keyword(word("$") | word("let") | word("in"));
-const Parser identifier(+alpha);
+const Parser identifier(charp('$') | +alpha);
 const Parser lambda('\\');
 const Parser leftBracket('(');
 const Parser rightBracket(')');
@@ -55,9 +54,14 @@ Parser tokenParser(Token& token){
   auto f = [&token](Token::Type t){
     return [&token, t](const string& str){ token = Token(t, str);};
   };
+  auto g = [&token](const string& str){
+    if(str == "$") token = Token(Token::Keyword, "$");
+    else if(str == "let") token = Token(Token::Keyword, "let");
+    else if(str == "in") token = Token(Token::Keyword, "in");
+    else token = Token(Token::Identifier, str);
+  };
   return (integer[f(Token::Constant)]
-      | keyword[f(Token::Keyword)]
-      | identifier[f(Token::Identifier)]
+      | identifier[g]
       | lambda[f(Token::Lambda)]
       | leftBracket[f(Token::LeftBracket)]
       | rightBracket[f(Token::RightBracket)]
