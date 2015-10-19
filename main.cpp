@@ -5,14 +5,13 @@
 #include <functional>
 #include <vector>
 #include <deque>
-#include <map>
-#include <unordered_map>
 #include <memory>
 #include <sstream>
 
 #include <cstdio>
 #include <readline/readline.h>
 #include <readline/history.h>
+
 #include "Parsers.hpp"
 #include "Dictionary.hpp"
 
@@ -24,7 +23,7 @@ using Parsers::anyChar;
 using Parsers::spaces;
 using Parsers::oneOf;
 using Parsers::digit;
-using Parsers::charp;
+using Parsers::word;
 
 const Parser alpha(satisfy([](char c){
   if(isgraph(c) && c != '\\' && c != '$' && c != '(' && c != ')'){
@@ -34,7 +33,8 @@ const Parser alpha(satisfy([](char c){
 }));
 
 const Parser integer(maybe(oneOf("+-")) >> +digit);
-const Parser identifier(charp('$') | +alpha);
+const Parser keyword(word("$") | word("let") | word("in"));
+const Parser identifier(+alpha);
 const Parser lambda('\\');
 const Parser leftBracket('(');
 const Parser rightBracket(')');
@@ -42,7 +42,7 @@ const Parser panic(anyChar[ ([](const string& str){ cerr << "[Lex] Unexpected in
 
 class Token{
   public:
-    enum Type{Undefined, Constant, Identifier, Lambda, LeftBracket, RightBracket, EndOfFile} type;
+    enum Type{Undefined, Constant, Identifier, Keyword, Lambda, LeftBracket, RightBracket, EndOfFile} type;
     std::string name;
 
     Token() : type(Undefined), name() {}
@@ -56,6 +56,7 @@ Parser tokenParser(Token& token){
     return [&token, t](const string& str){ token = Token(t, str);};
   };
   return (integer[f(Token::Constant)]
+      | keyword[f(Token::Keyword)]
       | identifier[f(Token::Identifier)]
       | lambda[f(Token::Lambda)]
       | leftBracket[f(Token::LeftBracket)]
@@ -144,18 +145,11 @@ shared_ptr<Expression> parseExpressionTail(Scanner&);
 shared_ptr<Expression> parseExpression(Scanner &scanner){
   shared_ptr<Expression> expr(parseExpressionTail(scanner));
   if(expr == nullptr){
+    cerr << "[Parse expression] Unexpected token: " << scanner.peekToken().name << endl;
+    exit(1);
     return nullptr;
   }
   while(true){
-    /*
-    switch(scanner.peekToken().type){
-      case Token::RightBracket:
-      case Token::EndOfFile:
-        return expr;
-
-      default: break;
-    }
-    */
     shared_ptr<Expression> expr1(parseExpressionTail(scanner));
     if(expr1 == nullptr){
       return expr;
@@ -184,12 +178,34 @@ shared_ptr<Expression> parseExpressionTail(Scanner &scanner){
       return expr;
 
     case Token::Identifier:
-      if(token.name == "$"){
-        return parseExpression(scanner);
-      }
       expr.reset(new Expression(Expression::Var));
       expr->name = token.name;
       return expr;
+
+    case Token::Keyword:
+      if(token.name == "$"){
+        return parseExpression(scanner);
+      }else if(token.name == "let"){
+        token = scanner.getToken();
+        if(token.type != Token::Identifier){
+          cerr << "[Parse] Expected an identifier: " << token.name << endl;
+          exit(1);
+        }
+        expr.reset(new Expression(Expression::Ap));
+        expr->body.reset(new Expression(Expression::Lambda));
+        expr->body->name = token.name;
+        expr->arg = parseExpression(scanner);
+        token = scanner.getToken();
+        if(token.type != Token::Keyword || token.name != "in"){
+          cerr << "[Parse] Expected a keyword `in`: " << token.name << endl;
+          exit(1);
+        }
+        expr->body->body = parseExpression(scanner);
+        return expr;
+      }else if(token.name == "in"){
+        scanner.ungetToken(token);
+        return nullptr;
+      }
 
     case Token::Constant:
       expr.reset(new Expression(Expression::Constant));
@@ -208,13 +224,11 @@ shared_ptr<Expression> parseExpressionTail(Scanner &scanner){
 
     case Token::RightBracket:
       scanner.ungetToken(token);
+      return nullptr;
+
     case Token::EndOfFile:
     default:
       return nullptr;
-      /*
-      cerr << "[Parse] Unexpected token: " << token.name << endl;
-      exit(1);
-      */
   }
 }
 
@@ -242,7 +256,6 @@ class Object;
 class Context;
 
 class Context{
-    // unordered_map<string, shared_ptr<Object>> _env;
     Dictionary<shared_ptr<Object>> _env;
   public:
     Context() {}
@@ -439,25 +452,16 @@ Object normalForm(const Expression& expr, const Context& env){
   }
 }
 
+void stripTrailingSpace(string&);
+
 int main(int argc, char *argv[])
 {
+  /* Initialize GNU readline, GNU history */
+  rl_bind_key ('\t', rl_insert);
   using_history();
+  /* End of initialize GNU readline, GNU history */
 
   Context prelude;
-  prelude.add("let", Object([](const Expression& expr, const Context& _){
-          // let x y in z
-          if( !expr.isVar() ){
-            cerr << "[let bind] Expected an identifier: " << expr.name << endl;
-            exit(1);
-          }
-          string varName(expr.name);
-          return Object([varName](const Expression& expr, const Context& env1){
-              Expression bindBody(expr);
-              return Object([varName, bindBody, env1](const Expression& expr, const Context& env){
-                  return Object(expr, env.insert(varName, {bindBody, env1}));
-                });
-            });
-        }));
   prelude.add("bool", "\\x x true false");
   prelude.add("true", "\\a \\b a");
   prelude.add("false", "\\a \\b b");
@@ -529,7 +533,6 @@ int main(int argc, char *argv[])
               }
             });
         }));
-  // prelude.add("$", "\\f \\g f g");
   prelude.add("id", "\\x x");
   prelude.add("flip", "\\f \\x \\y f y x");
   prelude.add(".", "\\f \\g \\x f(g x)");
@@ -563,14 +566,19 @@ int main(int argc, char *argv[])
   bool allSpace = true;
   string rawInput;
   while(true){
-    char *_input = readline(allSpace ? "Prelude> " : "Prelude| ");
+    char * _input = readline(allSpace ? "Prelude> " : "Prelude| ");
     if(_input == nullptr){
       cout << endl;
       break;
-      continue;
     }
     string input(_input);
     free(_input);
+
+    stripTrailingSpace(input);
+    if(input == ":q" || input == ":quit"){
+      cout << flush;
+      break;
+    }
 
     bool isComment = false;
     for(int i = 0; i < input.size(); ++i){
@@ -588,6 +596,11 @@ int main(int argc, char *argv[])
       continue;
     }
 
+    if(!input.empty()){
+      allSpace = false;
+      add_history(input.c_str());
+    }
+
     rawInput += input;
     rawInput += "\n";
 
@@ -596,10 +609,6 @@ int main(int argc, char *argv[])
         ++bracketCount;
       }else if(*it == ')'){
         --bracketCount;
-      }
-      if(*it != ' ' && *it != '\t' && *it != '\n'){
-        allSpace = false;
-        add_history(input.c_str());
       }
     }
 
@@ -615,24 +624,13 @@ int main(int argc, char *argv[])
 
       if(scanner.peekToken().name == ":let"){
         scanner.getToken();
-        shared_ptr<Expression> expr1 = parseExpressionTail(scanner);
-        if(expr1 == nullptr || expr1->type != Expression::Var){
-          cerr << "[Name bind] Expected an identifier: ";
-          if(expr1 == nullptr)
-            cerr << endl;
-          else
-            cerr << expr1->name << endl;
-          continue;
-        }
-        /*
         Token token(scanner.getToken());
         if(token.type != Token::Identifier){
           cerr << "[Name bind] Expected an identifier: " << token.name << endl;
           continue;
         }
-        */
-        shared_ptr<Expression> expr2 = parseExpression(scanner);
-        prelude.add(expr1->name, {*expr2, prelude});
+        shared_ptr<Expression> expr = parseExpression(scanner);
+        prelude.add(token.name, {*expr, prelude});
         continue;
       }
       shared_ptr<Expression> expr = parseExpression(scanner);
@@ -645,6 +643,18 @@ int main(int argc, char *argv[])
 
   cout << "Goodbye." << endl;
   return 0;
+}
+
+void stripTrailingSpace(string& str){
+  int i = str.size() - 1;
+  while(i >= 0){
+    if(str[i] != ' ' && str[i] != '\t' && str[i] != '\n'){
+      break;
+    }
+    --i;
+  }
+  str = str.substr(0, i+1);
+  return;
 }
 
 void Expression::print() const {

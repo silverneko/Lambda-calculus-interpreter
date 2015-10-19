@@ -12,9 +12,10 @@ $ ./main
 or
 ```bash
 $ ./main < testcase/fibtest
+$ ./main < testcase/primetest
 ```
 
-Type `Ctrl-D` to exit interactive shell.
+Type `Ctrl-D`, `:q`, `:quit` to exit interactive shell.
 
 ## Syntax
 ### Lambda
@@ -25,11 +26,21 @@ Type `Ctrl-D` to exit interactive shell.
 ### Beta reduce
 ```
 (\x y) z
+-- evaluates `y` with `x` bounded to `z`
 ```
 
 Expressions are left associative.
 - `a b c d` evaluates to `((a b) c) d`
 - `a \x y z` evaluates to `a (\x (y z))`
+
+### Multiline expressions
+```
+(
+  expre
+  ssion
+)
+-- use parentheses
+```
 
 ### Comments
 ```
@@ -40,9 +51,9 @@ Expressions are left associative.
 ```
 a $ b c d
 -- evaluates to `a ((b c) d)` but not `((a b) c) d`
--- use dollar sign to omit parentheses
-let x y z
+let x y in z
 -- evaluates `z` in the context of `x` being bounded to `y`
+-- i.e. `(\x z) y`
 :let x y
 -- bound `x` to `y` (this changes the global context)
 -- because this is not an complete expression it can only be used at the outermost layer
@@ -51,13 +62,14 @@ let x y z
 
 ### Example
 ```
+-- equals to `(\zero (\x (\y + x (+ y 3)) zero) 12) 0`
+-- will show 15
 :let zero 0
 (
-let x 12 $
-let y zero $
-+ x $ + y 3
+  let x 12 in
+  let y zero in
+  + x $ + y 3
 )
--- will show 15
 ```
 
 ## TODO
