@@ -24,16 +24,17 @@ using Parsers::anyChar;
 using Parsers::spaces;
 using Parsers::oneOf;
 using Parsers::digit;
+using Parsers::charp;
 
 const Parser alpha(satisfy([](char c){
-  if(isgraph(c) && c != '(' && c != ')' && c != '\\'){
+  if(isgraph(c) && c != '\\' && c != '$' && c != '(' && c != ')'){
     return true;
   }
   return false;
 }));
 
 const Parser integer(maybe(oneOf("+-")) >> +digit);
-const Parser identifier(+alpha);
+const Parser identifier(charp('$') | +alpha);
 const Parser lambda('\\');
 const Parser leftBracket('(');
 const Parser rightBracket(')');
@@ -142,7 +143,11 @@ shared_ptr<Expression> parseExpressionTail(Scanner&);
 
 shared_ptr<Expression> parseExpression(Scanner &scanner){
   shared_ptr<Expression> expr(parseExpressionTail(scanner));
+  if(expr == nullptr){
+    return nullptr;
+  }
   while(true){
+    /*
     switch(scanner.peekToken().type){
       case Token::RightBracket:
       case Token::EndOfFile:
@@ -150,10 +155,16 @@ shared_ptr<Expression> parseExpression(Scanner &scanner){
 
       default: break;
     }
-    shared_ptr<Expression> expr1(new Expression(Expression::Ap));
-    expr1->body = expr;
-    expr1->arg  = parseExpressionTail(scanner);
-    expr = expr1;
+    */
+    shared_ptr<Expression> expr1(parseExpressionTail(scanner));
+    if(expr1 == nullptr){
+      return expr;
+    }else{
+      shared_ptr<Expression> expr2(new Expression(Expression::Ap));
+      expr2->body = expr;
+      expr2->arg  = expr1;
+      expr = expr2;
+    }
   }
 }
 
@@ -173,6 +184,9 @@ shared_ptr<Expression> parseExpressionTail(Scanner &scanner){
       return expr;
 
     case Token::Identifier:
+      if(token.name == "$"){
+        return parseExpression(scanner);
+      }
       expr.reset(new Expression(Expression::Var));
       expr->name = token.name;
       return expr;
@@ -193,10 +207,14 @@ shared_ptr<Expression> parseExpressionTail(Scanner &scanner){
       return expr;
 
     case Token::RightBracket:
+      scanner.ungetToken(token);
     case Token::EndOfFile:
     default:
+      return nullptr;
+      /*
       cerr << "[Parse] Unexpected token: " << token.name << endl;
       exit(1);
+      */
   }
 }
 
@@ -425,9 +443,7 @@ int main(int argc, char *argv[])
 {
   using_history();
 
-
   Context prelude;
-
   prelude.add("let", Object([](const Expression& expr, const Context& _){
           // let x y in z
           if( !expr.isVar() ){
@@ -437,14 +453,8 @@ int main(int argc, char *argv[])
           string varName(expr.name);
           return Object([varName](const Expression& expr, const Context& env1){
               Expression bindBody(expr);
-              return Object([varName, bindBody, env1](const Expression& expr, const Context& _){
-                  if(expr.name != "in"){
-                    cerr << "[let bind] Expected identifier `in`: " << expr.name << endl;
-                    exit(1);
-                  }
-                  return Object([varName, bindBody, env1](const Expression& expr, const Context& env){
-                      return Object(expr, env.insert(varName, {bindBody, env1}));
-                    });
+              return Object([varName, bindBody, env1](const Expression& expr, const Context& env){
+                  return Object(expr, env.insert(varName, {bindBody, env1}));
                 });
             });
         }));
@@ -519,7 +529,7 @@ int main(int argc, char *argv[])
               }
             });
         }));
-  prelude.add("$", "\\f \\g f g");
+  // prelude.add("$", "\\f \\g f g");
   prelude.add("id", "\\x x");
   prelude.add("flip", "\\f \\x \\y f y x");
   prelude.add(".", "\\f \\g \\x f(g x)");
@@ -605,13 +615,24 @@ int main(int argc, char *argv[])
 
       if(scanner.peekToken().name == ":let"){
         scanner.getToken();
+        shared_ptr<Expression> expr1 = parseExpressionTail(scanner);
+        if(expr1 == nullptr || expr1->type != Expression::Var){
+          cerr << "[Name bind] Expected an identifier: ";
+          if(expr1 == nullptr)
+            cerr << endl;
+          else
+            cerr << expr1->name << endl;
+          continue;
+        }
+        /*
         Token token(scanner.getToken());
         if(token.type != Token::Identifier){
           cerr << "[Name bind] Expected an identifier: " << token.name << endl;
           continue;
         }
-        shared_ptr<Expression> expr = parseExpression(scanner);
-        prelude.add(token.name, {*expr, prelude});
+        */
+        shared_ptr<Expression> expr2 = parseExpression(scanner);
+        prelude.add(expr1->name, {*expr2, prelude});
         continue;
       }
       shared_ptr<Expression> expr = parseExpression(scanner);

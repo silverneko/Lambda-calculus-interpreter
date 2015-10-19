@@ -38,12 +38,26 @@ Expressions are left associative.
 
 ### Semantic sugars
 ```
-let x y in z
--- evaluate `z` in the context of `x` being bounded to `y`
+a $ b c d
+-- evaluates to `a ((b c) d)` but not `((a b) c) d`
+-- use dollar sign to omit parentheses
+let x y z
+-- evaluates `z` in the context of `x` being bounded to `y`
 :let x y
 -- bound `x` to `y` (this changes the global context)
 -- because this is not an complete expression it can only be used at the outermost layer
 -- see `testcase/fibtest` for example
+```
+
+### Example
+```
+:let zero 0
+(
+let x 12 $
+let y zero $
++ x $ + y 3
+)
+-- will show 15
 ```
 
 ## TODO
