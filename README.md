@@ -49,8 +49,6 @@ Expressions are left associative.
 
 ### Semantic sugars
 ```
-a $ b c d
--- evaluates to `a ((b c) d)` but not `((a b) c) d`
 let x y in z
 -- evaluates `z` in the context of `x` being bounded to `y`
 -- i.e. `(\x z) y`
@@ -68,7 +66,7 @@ let x y in z
 (
   let x 12 in
   let y zero in
-  + x $ + y 3
+  + x ( + y 3 )
 )
 ```
 

@@ -55,8 +55,8 @@ Parser tokenParser(Token& token){
     return [&token, t](const string& str){ token = Token(t, str);};
   };
   auto g = [&token](const string& str){
-    if(str == "$") token = Token(Token::Keyword, "$");
-    else if(str == "let") token = Token(Token::Keyword, "let");
+    /*if(str == "$") token = Token(Token::Keyword, "$");
+    else */if(str == "let") token = Token(Token::Keyword, "let");
     else if(str == "in") token = Token(Token::Keyword, "in");
     else token = Token(Token::Identifier, str);
   };
@@ -639,8 +639,13 @@ int main(int argc, char *argv[])
       }
       shared_ptr<Expression> expr = parseExpression(scanner);
 
-      normalForm(*expr, prelude).expr().prettyPrint();
-      cout << endl;
+      Object res = normalForm(*expr, prelude);
+      if( !res.isPrimitive() ){
+        res.expr().prettyPrint();
+        cout << endl;
+      }else{
+        cout << "I dunno how to show a primitive function" << endl;
+      }
 
     }
   }
