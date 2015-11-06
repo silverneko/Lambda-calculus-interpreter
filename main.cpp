@@ -9,8 +9,6 @@
 #include <sstream>
 
 #include <cstdio>
-#include <readline/readline.h>
-#include <readline/history.h>
 
 #include "Parsers.hpp"
 #include "Dictionary.hpp"
@@ -26,14 +24,15 @@ using Parsers::digit;
 using Parsers::charp;
 
 const Parser alpha(satisfy([](char c){
-  if(isgraph(c) && c != '\\' && c != '$' && c != '(' && c != ')'){
+  if(isgraph(c) && c != '\\' && c != '(' && c != ')'){
     return true;
   }
   return false;
 }));
 
 const Parser integer(maybe(oneOf("+-")) >> +digit);
-const Parser identifier(charp('$') | +alpha);
+const Parser charLiteral(charp('\'') >> satisfy([](char c){ return isprint(c);}) >> charp('\''));
+const Parser identifier(+alpha);
 const Parser lambda('\\');
 const Parser leftBracket('(');
 const Parser rightBracket(')');
@@ -55,12 +54,12 @@ Parser tokenParser(Token& token){
     return [&token, t](const string& str){ token = Token(t, str);};
   };
   auto g = [&token](const string& str){
-    /*if(str == "$") token = Token(Token::Keyword, "$");
-    else */if(str == "let") token = Token(Token::Keyword, "let");
+    if(str == "let") token = Token(Token::Keyword, "let");
     else if(str == "in") token = Token(Token::Keyword, "in");
     else token = Token(Token::Identifier, str);
   };
   return (integer[f(Token::Constant)]
+      | charLiteral[f(Token::Constant)]
       | identifier[g]
       | lambda[f(Token::Lambda)]
       | leftBracket[f(Token::LeftBracket)]
@@ -214,7 +213,12 @@ shared_ptr<Expression> parseExpressionTail(Scanner &scanner){
     case Token::Constant:
       expr.reset(new Expression(Expression::Constant));
       expr->name = token.name;
-      expr->val = stringTo<int>(token.name);
+      if(token.name[0] == '\''){
+        // character literal
+        expr->val = (int)token.name[1];
+      }else{
+        expr->val = stringTo<int>(token.name);
+      }
       return expr;
 
     case Token::LeftBracket:
@@ -460,34 +464,22 @@ void stripTrailingSpace(string&);
 
 int main(int argc, char *argv[])
 {
-  /* Initialize GNU readline, GNU history */
-  rl_bind_key ('\t', rl_insert);
-  using_history();
-  /* End of initialize GNU readline, GNU history */
-
   Context prelude;
-  prelude.add("bool", "\\x x true false");
   prelude.add("true", "\\a \\b a");
   prelude.add("false", "\\a \\b b");
   prelude.add("if", "\\pred \\then \\else pred then else");
   prelude.add("not", "\\x x false true");
   prelude.add("and", "\\x \\y x y false");
   prelude.add("or", "\\x \\y x true y");
-  // prelude.add("Y", "\\f (\\x f (x x)) (\\x f (x x))");
-  // y f = f (y f)
-  prelude.add("y", Object([](const Expression& expr, const Context& env){
+  // Y f = f (Y f)
+  prelude.add("Y", Object([](const Expression& expr, const Context& env){
           Expression expr1( Expression::Ap );
           expr1.body.reset(new Expression(expr));
             Expression expr2( Expression::Ap );
-            expr2.body.reset(new Expression("y"));
+            expr2.body.reset(new Expression("Y"));
             expr2.arg.reset(new Expression(expr));
           expr1.arg.reset(new Expression(expr2));
           return Object(expr1, env);
-        }));
-  prelude.add("Y", "y");
-  prelude.add("hello", Object([](const Expression& expr, const Context& env){
-          Object res(normalForm(expr, env));
-          return Expression("\"Hello, " + res.expr().name + "!\"");
         }));
   prelude.add("+", Object([](const Expression& expr, const Context& env){
           int a = normalForm(expr, env).expr().val;
@@ -526,9 +518,9 @@ int main(int argc, char *argv[])
               return Expression( a % b );
             });
         }));
-  prelude.add("==", Object([prelude](const Expression& expr, const Context& env){
+  prelude.add("==", Object([](const Expression& expr, const Context& env){
           int a = normalForm(expr, env).expr().val;
-          return Object([prelude, a](const Expression& expr, const Context& env){
+          return Object([a](const Expression& expr, const Context& env){
               int b = normalForm(expr, env).expr().val;
               if(a == b){
                 return Object(Expression("true"), env);
@@ -541,9 +533,9 @@ int main(int argc, char *argv[])
   prelude.add("flip", "\\f \\x \\y f y x");
   prelude.add(".", "\\f \\g \\x f(g x)");
   prelude.add("!=", "\\a . not (== a)");
-  prelude.add("<", Object([prelude](const Expression& expr, const Context& env){
+  prelude.add("<", Object([](const Expression& expr, const Context& env){
           int a = normalForm(expr, env).expr().val;
-          return Object([prelude, a](const Expression& expr, const Context& env){
+          return Object([a](const Expression& expr, const Context& env){
               int b = normalForm(expr, env).expr().val;
               if(a < b){
                 return Object(Expression("true"), env);
@@ -552,9 +544,9 @@ int main(int argc, char *argv[])
               }
             });
         }));
-  prelude.add("<=", Object([prelude](const Expression& expr, const Context& env){
+  prelude.add("<=", Object([](const Expression& expr, const Context& env){
           int a = normalForm(expr, env).expr().val;
-          return Object([prelude, a](const Expression& expr, const Context& env){
+          return Object([a](const Expression& expr, const Context& env){
               int b = normalForm(expr, env).expr().val;
               if(a <= b){
                 return Object(Expression("true"), env);
@@ -566,91 +558,35 @@ int main(int argc, char *argv[])
   prelude.add(">", "flip <");
   prelude.add(">=", "flip >=");
 
-  int bracketCount = 0;
-  bool allSpace = true;
-  string rawInput;
-  while(true){
-    char * _input = readline(allSpace ? "Prelude> " : "Prelude| ");
-    if(_input == nullptr){
-      cout << endl;
-      break;
-    }
-    string input(_input);
-    free(_input);
+  prelude.add(">>=", "\\m \\f \\s (m s) \\s' \\a f a s'");
+  prelude.add(">>", "\\m \\k \\s (m s) \\s' \\_ k s'");
 
-    stripTrailingSpace(input);
-    if(input == ":q" || input == ":quit"){
-      cout << flush;
-      break;
-    }
+  prelude.add("runIO", "\\m m s");
+  prelude.add("putChar", Object([](const Expression& expr, const Context& env){
+        int c = normalForm(expr, env).expr().val;
+        return Object([c](const Expression& s, const Context& env){
+          fputc(c, stdout);
+          /* Lam "p" (Ap (Ap "p" `s`) "()") */
+          return Object([s](const Expression& p, const Context& env){
+            Object res = weakNormalForm(p, env).call(s, env);
+            return weakNormalForm(res.expr(), res.env()).call(Expression("()"), res.env());
+          });
+        });
+      }));
 
-    bool isComment = false;
-    for(int i = 0; i < input.size(); ++i){
-      if(input[i] != ' ' && input[i] != '\t' && input[i] != '\n'){
-        if(input[i] == '-'){
-          if(i+1 < input.size() && input[i+1] == '-'){
-            isComment = true;
-          }
-        }
-        break;
-      }
-    }
-    if(isComment){
-      add_history(input.c_str());
-      continue;
-    }
-
-    if(!input.empty()){
-      allSpace = false;
-      add_history(input.c_str());
-    }
-
+  string rawInput, input;
+  while(getline(cin, input)){
+    // stripTrailingSpace(input);
     rawInput += input;
     rawInput += "\n";
-
-    for(auto it = input.begin(); it != input.end(); ++it){
-      if(*it == '('){
-        ++bracketCount;
-      }else if(*it == ')'){
-        --bracketCount;
-      }
-    }
-
-    if(bracketCount == 0){
-      if(allSpace){
-        rawInput = "";
-        continue;
-      }
-
-      Scanner scanner(rawInput);
-      rawInput = "";
-      allSpace = true;
-
-      if(scanner.peekToken().name == ":let"){
-        scanner.getToken();
-        Token token(scanner.getToken());
-        if(token.type != Token::Identifier){
-          cerr << "[Name bind] Expected an identifier: " << token.name << endl;
-          continue;
-        }
-        shared_ptr<Expression> expr = parseExpression(scanner);
-        prelude.add(token.name, {*expr, prelude});
-        continue;
-      }
-      shared_ptr<Expression> expr = parseExpression(scanner);
-
-      Object res = normalForm(*expr, prelude);
-      if( !res.isPrimitive() ){
-        res.expr().prettyPrint();
-        cout << endl;
-      }else{
-        cout << "I dunno how to show a primitive function" << endl;
-      }
-
-    }
   }
 
-  cout << "Goodbye." << endl;
+  Scanner scanner(rawInput);
+  shared_ptr<Expression> expr = parseExpression(scanner);
+  Object res = normalForm(*expr, prelude);
+
+  cout << endl;
+
   return 0;
 }
 

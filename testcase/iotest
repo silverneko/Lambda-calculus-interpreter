@@ -1,0 +1,60 @@
+let [] (\s \z z) in
+let : (\x \xs \s \z s x xs) in
+let head (\x x (\a \_ a) _) in
+let tail (\x x (\_ \b b) _) in
+let empty? (\x x (\_ \_ false) true) in
+
+let putNewline (putChar 10) in
+
+let putStrLn Y(\putStrLn \s 
+    if (empty? s)
+      putNewline
+      (>>
+        (putChar (head s))
+        (putStrLn (tail s))
+      )
+    )
+in
+
+let helloworld (: 'H' (: 'e' (: 'l' (: 'l' (: 'o' (: ',' (: ' ' (: 'w' (: 'o' (: 'r' (: 'l' (: 'd' (: '!' [])))))))))))))
+in
+
+let rev Y(\rev \x \a
+    if (empty? x)
+      a
+      (rev (tail x) (: (head x) a))
+    )
+in
+
+let reverse (\x rev x []) in
+
+let showInt' Y(\showInt' \i
+    if (== 0 i)
+      []
+      (: (+ '0' (% i 10)) (showInt' (/ i 10)))
+    )
+in
+
+let showInt (\i
+    if (< 0 i)
+      (. reverse showInt' i)
+      (if (== 0 i)
+        (: '0' [])
+        (: '-' (. reverse showInt' (* -1 i)))
+      )
+    )
+in
+
+let main 
+    (>>
+    (>> 
+    (>> 
+      (putStrLn helloworld)
+      (putStrLn (showInt 1029384756))
+    ) (putStrLn (showInt -2349000))
+    ) (putStrLn (showInt -0012309))
+)
+in
+
+runIO main
+

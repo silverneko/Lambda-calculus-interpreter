@@ -1,5 +1,5 @@
 CC = clang++
-CFLAGS = -std=c++11 -lreadline -Wall
+CFLAGS = -std=c++11 -Wall
 .PHONY = all clean
 
 all: main
