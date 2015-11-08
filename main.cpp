@@ -560,16 +560,17 @@ int main(int argc, char *argv[])
 
   prelude.add(">>=", "\\m \\f \\s (m s) \\s' \\a f a s'");
   prelude.add(">>", "\\m \\k \\s (m s) \\s' \\_ k s'");
+  prelude.add(">>", "\\ma \\mb >>= ma (\\_ mb)");
 
   prelude.add("runIO", "\\m m s");
   prelude.add("putChar", Object([](const Expression& expr, const Context& env){
-        int c = normalForm(expr, env).expr().val;
-        return Object([c](const Expression& s, const Context& env){
-          fputc(c, stdout);
+        auto promiseChar = [expr, env](){ return normalForm(expr, env).expr().val;};
+        return Object([promiseChar](const Expression& s, const Context& env){
+          fputc(promiseChar(), stdout);
           /* Lam "p" (Ap (Ap "p" `s`) "()") */
-          return Object([s](const Expression& p, const Context& env){
-            Object res = weakNormalForm(p, env).call(s, env);
-            return weakNormalForm(res.expr(), res.env()).call(Expression("()"), res.env());
+          return Object([s, env](const Expression& p, const Context& _env){
+            Object res = weakNormalForm(p, _env).call(s, env);
+            return weakNormalForm(res.expr(), res.env()).call(Expression("NIL"), res.env());
           });
         });
       }));

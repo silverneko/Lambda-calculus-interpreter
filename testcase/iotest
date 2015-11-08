@@ -4,17 +4,21 @@ let head (\x x (\a \_ a) _) in
 let tail (\x x (\_ \b b) _) in
 let empty? (\x x (\_ \_ false) true) in
 
-let putNewline (putChar 10) in
+let pair (\a \b \p p a b) in
+let pureIO (\x \s pair s x) in
+let putLn (putChar 10) in
 
-let putStrLn Y(\putStrLn \s 
+let putStr Y(\putStr \s 
     if (empty? s)
-      putNewline
+      (pureIO NIL)
       (>>
         (putChar (head s))
-        (putStrLn (tail s))
+        (putStr (tail s))
       )
     )
 in
+
+let putStrLn (\s >> (putStr s) putLn) in
 
 let helloworld (: 'H' (: 'e' (: 'l' (: 'l' (: 'o' (: ',' (: ' ' (: 'w' (: 'o' (: 'r' (: 'l' (: 'd' (: '!' [])))))))))))))
 in
@@ -45,15 +49,45 @@ let showInt (\i
     )
 in
 
-let main 
+let take Y(\take \n \x
+    if (<= n 0)
+      []
+      (: (head x) (take (- n 1) (tail x)))
+    )
+in
+
+let map Y(\map \f \x
+    if (empty? x)
+      []
+      (: (f (head x)) (map f (tail x)))
+    )
+in
+
+let zipWith Y(\zipWith \f \g \h
+    if (or (empty? g) (empty? h))
+      []
+      (: (f (head g) (head h)) (zipWith f (tail g) (tail h)))
+    )
+in
+
+let fib Y(\fib (: 1 (: 1 (zipWith + fib (tail fib))))) in
+
+let sequence Y(\sequence \x
+    if (empty? x)
+      (pureIO [])
+      (>>= (head x) (\x' (>>= (sequence (tail x)) (\xs' pureIO (: x' xs')))))
+    )
+in
+
+let main
     (>>
-    (>> 
-    (>> 
       (putStrLn helloworld)
-      (putStrLn (showInt 1029384756))
-    ) (putStrLn (showInt -2349000))
-    ) (putStrLn (showInt -0012309))
-)
+    (>>
+      (putStrLn helloworld)
+      let printFibs (sequence (map (. putStrLn showInt) (take 50 fib)))
+      in (>> printFibs (>> putLn printFibs))
+    )
+    )
 in
 
 runIO main
