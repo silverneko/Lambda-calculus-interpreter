@@ -1,5 +1,6 @@
 #include <cstdlib>
 #include <iostream>
+#include <fstream>
 #include <string>
 #include <algorithm>
 #include <functional>
@@ -20,8 +21,10 @@ using Parsers::satisfy;
 using Parsers::anyChar;
 using Parsers::spaces;
 using Parsers::oneOf;
+using Parsers::noneOf;
 using Parsers::digit;
 using Parsers::charp;
+using Parsers::word;
 
 const Parser alpha(satisfy([](char c){
   if(isgraph(c) && c != '\\' && c != '(' && c != ')'){
@@ -36,6 +39,7 @@ const Parser identifier(+alpha);
 const Parser lambda('\\');
 const Parser leftBracket('(');
 const Parser rightBracket(')');
+const Parser comment(word("--") >> many(noneOf("\n")));
 const Parser panic(anyChar[ ([](const string& str){ cerr << "[Lex] Unexpected input: " << str << endl;}) ]);
 
 class Token{
@@ -58,7 +62,8 @@ Parser tokenParser(Token& token){
     else if(str == "in") token = Token(Token::Keyword, "in");
     else token = Token(Token::Identifier, str);
   };
-  return (integer[f(Token::Constant)]
+  return (comment[f(Token::Undefined)]
+      | integer[f(Token::Constant)]
       | charLiteral[f(Token::Constant)]
       | identifier[g]
       | lambda[f(Token::Lambda)]
@@ -78,7 +83,8 @@ class Scanner{
         tie(ignore, first) = spaces.runParser(first, last);
         if(first == last) break;
         tie(ignore, first) = tokenParser(token).runParser(first, last);
-        tokens.push_back(token);
+        if(token.type != Token::Undefined)
+          tokens.push_back(token);
       }
     }
 
@@ -460,8 +466,6 @@ Object normalForm(const Expression& expr, const Context& env){
   }
 }
 
-void stripTrailingSpace(string&);
-
 int main(int argc, char *argv[])
 {
   Context prelude;
@@ -511,7 +515,7 @@ int main(int argc, char *argv[])
               return Expression( a / b );
             });
         }));
-  prelude.add("%", Object([](const Expression& expr, const Context& env){
+  prelude.add("mod", Object([](const Expression& expr, const Context& env){
           int a = normalForm(expr, env).expr().val;
           return Object([a](const Expression& expr, const Context& env){
               int b = normalForm(expr, env).expr().val;
@@ -529,10 +533,6 @@ int main(int argc, char *argv[])
               }
             });
         }));
-  prelude.add("id", "\\x x");
-  prelude.add("flip", "\\f \\x \\y f y x");
-  prelude.add(".", "\\f \\g \\x f(g x)");
-  prelude.add("!=", "\\a . not (== a)");
   prelude.add("<", Object([](const Expression& expr, const Context& env){
           int a = normalForm(expr, env).expr().val;
           return Object([a](const Expression& expr, const Context& env){
@@ -555,29 +555,37 @@ int main(int argc, char *argv[])
               }
             });
         }));
+  prelude.add("flip", "\\f \\x \\y f y x");
+  prelude.add("!=", "\\a \\b not (== a b)");
   prelude.add(">", "flip <");
   prelude.add(">=", "flip >=");
 
-  prelude.add(">>=", "\\m \\f \\s (m s) \\s' \\a f a s'");
-  prelude.add(">>", "\\m \\k \\s (m s) \\s' \\_ k s'");
+  prelude.add(">>=", "\\m \\f \\s (m s) \\a \\s' f a s'");
   prelude.add(">>", "\\ma \\mb >>= ma (\\_ mb)");
 
   prelude.add("runIO", "\\m m s");
+  prelude.add("pair", "\\a \\b \\p p a b");
+  prelude.add("pureIO", "pair");
   prelude.add("putChar", Object([](const Expression& expr, const Context& env){
         auto promiseChar = [expr, env](){ return normalForm(expr, env).expr().val;};
         return Object([promiseChar](const Expression& s, const Context& env){
           fputc(promiseChar(), stdout);
-          /* Lam "p" (Ap (Ap "p" `s`) "()") */
+          /* pair nil s */
           return Object([s, env](const Expression& p, const Context& _env){
-            Object res = weakNormalForm(p, _env).call(s, env);
-            return weakNormalForm(res.expr(), res.env()).call(Expression("NIL"), res.env());
+            Object res = weakNormalForm(p, _env).call(Expression("nil"), {});
+            return weakNormalForm(res.expr(), res.env()).call(s, env);
           });
         });
       }));
 
   string rawInput, input;
+  ifstream preludeFile("samplecode/prelude");
+  while(getline(preludeFile, input)){
+    rawInput += input;
+    rawInput += "\n";
+  }
+  preludeFile.close();
   while(getline(cin, input)){
-    // stripTrailingSpace(input);
     rawInput += input;
     rawInput += "\n";
   }
@@ -586,21 +594,10 @@ int main(int argc, char *argv[])
   shared_ptr<Expression> expr = parseExpression(scanner);
   Object res = normalForm(*expr, prelude);
 
-  cout << endl;
+  //res.expr().prettyPrint();
+  //cout << endl;
 
   return 0;
-}
-
-void stripTrailingSpace(string& str){
-  int i = str.size() - 1;
-  while(i >= 0){
-    if(str[i] != ' ' && str[i] != '\t' && str[i] != '\n'){
-      break;
-    }
-    --i;
-  }
-  str = str.substr(0, i+1);
-  return;
 }
 
 void Expression::print() const {

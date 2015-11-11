@@ -5,17 +5,14 @@ Untyped lambda calculus
 Project of the [BYOHC-Workshop](https://github.com/CindyLinz/BYOHC-Workshop).
 
 ## How to use
+### Make
 ```bash
 $ make
-$ ./main
-```
-or
-```bash
-$ ./main < testcase/fibtest
-$ ./main < testcase/primetest
 ```
 
-Type `Ctrl-D`, `:q`, `:quit` to exit interactive shell.
+```bash
+$ ./main < testcase/iotest
+```
 
 ## Syntax
 ### Lambda
@@ -25,49 +22,51 @@ Type `Ctrl-D`, `:q`, `:quit` to exit interactive shell.
 
 ### Beta reduce
 ```
-(\x y) z
--- evaluates `y` with `x` bounded to `z`
+(\x y) z  -- evaluates `y` with `x` bounded to `z`
 ```
 
 Expressions are left associative.
 - `a b c d` evaluates to `((a b) c) d`
 - `a \x y z` evaluates to `a (\x (y z))`
 
-### Multiline expressions
+### IO
 ```
-(
-  expre
-  ssion
-)
--- use parentheses
+-- print a character
+-- putChar :: Char -> IO ()
+putChar 'a'
+
+-- Monadic bind
+-- >>= :: IO a -> (a -> IO b) -> IO b
+-- Sequencial compose
+-- >>  :: IO a -> IO b -> IO b
+
+-- Run an IO monad with runIO
+runIO (>> (putChar '4') (putChar '2'))
 ```
 
 ### Comments
 ```
--- Comments start with two minuses and it must occupy a whole line
+-- Comments start with two minuses
+-- Only have single-line comments right now
 ```
 
 ### Semantic sugars
 ```
 let x y in z
--- evaluates `z` in the context of `x` being bounded to `y`
+--evaluates `z` in the context of `x` being bounded to `y`
 -- i.e. `(\x z) y`
-:let x y
--- bound `x` to `y` (this changes the global context)
--- because this is not an complete expression it can only be used at the outermost layer
--- see `testcase/fibtest` for example
 ```
 
 ### Example
 ```
--- equals to `(\zero (\x (\y + x (+ y 3)) zero) 12) 0`
--- will show 15
-:let zero 0
-(
-  let x 12 in
-  let y zero in
-  + x ( + y 3 )
-)
+let helloworld (: 'H' (: 'e' (: 'l' (: 'l' (: 'o' (: ',' (: ' ' (: 'w' (: 'o' (: 'r' (: 'l' (: 'd' (: '!' []))))))))))))) in
+let fibs Y(\fibs (: 1 (: 1 (zipWith + fibs (tail fibs))))) in
+let main (>> 
+    (putStrLn helloworld)
+    (sequence (map (\x putStrLn (showInt x)) (take 30 fibs)))
+  )
+in runIO main
+-- See complete code in `samplecode/prelude` and `samplecode/iotest`
 ```
 
 ## TODO

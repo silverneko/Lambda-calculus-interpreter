@@ -1,0 +1,44 @@
+let id (\x x) in
+let . (\f \g \x f (g x)) in
+
+let [] (\s \z z) in
+let : (\x \xs \s \z s x xs) in
+let head (\x x (\a \_ a) _) in
+let tail (\x x (\_ \b b) _) in
+let empty? (\x x (\_ \_ false) true) in
+
+let ++ Y(\++ \x \y
+    if (empty? x)
+      y
+      (: (head x) (++ (tail x) y))
+    )
+in
+
+let take Y(\take \n \x
+    if (<= n 0)
+      []
+      (: (head x) (take (- n 1) (tail x)))
+    )
+in
+
+let map Y(\map \f \x
+    if (empty? x)
+      []
+      (: (f (head x)) (map f (tail x)))
+    )
+in
+
+let zipWith Y(\zipWith \f \g \h
+    if (or (empty? g) (empty? h))
+      []
+      (: (f (head g) (head h)) (zipWith f (tail g) (tail h)))
+    )
+in
+
+let foldr Y(\foldr \f \a \x
+    if (empty? x)
+      a
+      (f (head x) (foldr f a (tail x)))
+    )
+in
+

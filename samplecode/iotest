@@ -1,0 +1,84 @@
+let putStr Y(\putStr \s 
+    if (empty? s)
+      (pureIO nil)
+      (>>
+        (putChar (head s))
+        (putStr (tail s))
+      )
+    )
+in
+
+let newline 10 in
+let putStrLn (\s >> (putStr s) (putChar newline)) in
+
+--  sequence :: [IO a] -> IO [a]
+let sequence Y(\sequence \x
+    if (empty? x)
+      (pureIO [])
+      (>>=
+        (head x)
+        (\x' (>>=
+          (sequence (tail x))
+          (\xs' pureIO (: x' xs'))
+          )
+        )
+      )
+    )
+in
+
+let showInt' Y(\showInt' \i \x
+    if (== 0 i)
+      x
+      (showInt' (/ i 10) (: (+ '0' (mod i 10)) x))
+    )
+in
+
+let showInt (\i
+    if (< 0 i)
+      (showInt' i [])
+      (if (== 0 i)
+        (: '0' [])
+        (: '-' (showInt' (* -1 i) []))
+      )
+    )
+in
+
+let showList' Y(\showList' \x
+    if (empty? x)
+      (: ']' [])
+      (++
+        (: ',' (showInt (head x)))
+        (showList' (tail x))
+      )
+    )
+in
+
+let showList (\x
+    if (empty? x)
+      (: '[' (: ']' []))
+      (++
+        (: '[' (showInt (head x)))
+        (showList' (tail x))
+      )
+    )
+in
+
+let helloworld (: 'H' (: 'e' (: 'l' (: 'l' (: 'o' (: ',' (: ' ' (: 'w' (: 'o' (: 'r' (: 'l' (: 'd' (: '!' [])))))))))))))
+in
+let fibs Y(\fibs (: 1 (: 1 (zipWith + fibs (tail fibs))))) in
+
+let main
+    (>>
+      (putStrLn helloworld)
+      (>>
+        (putStrLn helloworld)
+        (>>
+          (putStrLn (showList (take 30 fibs)))
+          (sequence (map (. putStrLn showInt) (take 30 fibs)))
+        )
+      )
+    )
+in
+
+runIO main
+
