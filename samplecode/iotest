@@ -80,6 +80,23 @@ let getLine Y(\getLine
     )
 in
 
+let readInt' Y(\readInt' \accu \xs
+    if (empty? xs)
+      accu
+      (readInt' (+ (* 10 accu) (- (head xs) '0')) (tail xs))
+    )
+in
+--  readInt :: String -> Int
+let readInt (\s
+    if (== '-' (head s))
+      (* -1 (readInt' 0 (tail s)))
+      (if (== '+' (head s))
+        (readInt' 0 (tail s))
+        (readInt' 0 s)
+      )
+    )
+in
+
 let helloworld (: 'H' (: 'e' (: 'l' (: 'l' (: 'o' (: ',' (: ' ' (: 'w' (: 'o' (: 'r' (: 'l' (: 'd' (: '!' [])))))))))))))
 in
 let fibs Y(\fibs (: 1 (: 1 (zipWith + fibs (tail fibs))))) in
@@ -92,9 +109,14 @@ let main
       \name
     (>>
       (putStrLn (++ (: 'H' (: 'i' (: ',' (: ' ' [])))) (++ name (: '!' []))))
+    (>>=
+      getLine
+      \n
+      let n (readInt n) in
     (>>
-      (putStrLn (showList (take 30 fibs)))
-      (sequence (map (. putStrLn showInt) (take 30 fibs)))
+      (putStrLn (showList (take n fibs)))
+      (sequence (map (. putStrLn showInt) (take n fibs)))
+    )
     )
     )
     )
