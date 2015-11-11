@@ -577,19 +577,34 @@ int main(int argc, char *argv[])
           });
         });
       }));
+  prelude.add("getChar", Object([](const Expression& s, const Context& env){
+        int c = fgetc(stdin);
+        return Object([c, s, env](const Expression& p, const Context& _env){
+          Object res = weakNormalForm(p, _env).call(Expression(c), {});
+          return weakNormalForm(res.expr(), res.env()).call(s, env);
+        });
+      }));
 
   string rawInput, input;
-  ifstream preludeFile("samplecode/prelude");
-  while(getline(preludeFile, input)){
+  ifstream file("samplecode/prelude");
+  while(getline(file, input)){
     rawInput += input;
     rawInput += "\n";
   }
-  preludeFile.close();
-  while(getline(cin, input)){
-    rawInput += input;
-    rawInput += "\n";
+  file.close();
+  if(argc > 1){
+    file.open(argv[1]);
+    while(getline(file, input)){
+      rawInput += input;
+      rawInput += "\n";
+    }
+    file.close();
+  }else{
+    while(getline(cin, input)){
+      rawInput += input;
+      rawInput += "\n";
+    }
   }
-
   Scanner scanner(rawInput);
   shared_ptr<Expression> expr = parseExpression(scanner);
   Object res = normalForm(*expr, prelude);

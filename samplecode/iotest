@@ -63,6 +63,23 @@ let showList (\x
     )
 in
 
+let EOF -1 in
+
+--  getLine :: IO [Char]
+let getLine Y(\getLine
+    >>=
+      getChar
+      \c
+        if (or (== c newline) (== c EOF))
+          (pureIO [])
+          (>>=
+            getLine
+            \x
+            (pureIO (: c x))
+          )
+    )
+in
+
 let helloworld (: 'H' (: 'e' (: 'l' (: 'l' (: 'o' (: ',' (: ' ' (: 'w' (: 'o' (: 'r' (: 'l' (: 'd' (: '!' [])))))))))))))
 in
 let fibs Y(\fibs (: 1 (: 1 (zipWith + fibs (tail fibs))))) in
@@ -70,13 +87,17 @@ let fibs Y(\fibs (: 1 (: 1 (zipWith + fibs (tail fibs))))) in
 let main
     (>>
       (putStrLn helloworld)
-      (>>
-        (putStrLn helloworld)
-        (>>
-          (putStrLn (showList (take 30 fibs)))
-          (sequence (map (. putStrLn showInt) (take 30 fibs)))
-        )
-      )
+    (>>=
+      getLine
+      \name
+    (>>
+      (putStrLn (++ (: 'H' (: 'i' (: ',' (: ' ' [])))) (++ name (: '!' []))))
+    (>>
+      (putStrLn (showList (take 30 fibs)))
+      (sequence (map (. putStrLn showInt) (take 30 fibs)))
+    )
+    )
+    )
     )
 in
 
