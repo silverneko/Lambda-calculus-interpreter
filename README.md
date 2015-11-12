@@ -11,7 +11,8 @@ $ make
 ```
 
 ```bash
-$ ./main < testcase/iotest
+$ ./main [source pathname]
+# ./main samplecode/iotest
 ```
 
 ## Syntax
