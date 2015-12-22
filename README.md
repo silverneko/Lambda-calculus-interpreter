@@ -32,14 +32,18 @@ Expressions are left associative.
 
 ### IO
 ```
--- print a character
--- putChar :: Char -> IO ()
-putChar 'a'
-
 -- Monadic bind
 -- >>= :: IO a -> (a -> IO b) -> IO b
 -- Sequencial compose
 -- >>  :: IO a -> IO b -> IO b
+
+-- print a character
+-- putChar :: Char -> IO ()
+putChar 'a'
+
+-- read a character
+-- getChar :: IO Char
+(>>= getChar (\c putChar (+ 1 c)))  -- an IO action of "read one char, shift one amount, then print it"
 
 -- Run an IO monad with runIO
 runIO (>> (putChar '4') (putChar '2'))
@@ -54,7 +58,7 @@ runIO (>> (putChar '4') (putChar '2'))
 ### Semantic sugars
 ```
 let x y in z
---evaluates `z` in the context of `x` being bounded to `y`
+-- evaluates `z` in the context of `x` being bounded to `y`
 -- i.e. `(\x z) y`
 ```
 
@@ -62,7 +66,7 @@ let x y in z
 ```
 let helloworld (: 'H' (: 'e' (: 'l' (: 'l' (: 'o' (: ',' (: ' ' (: 'w' (: 'o' (: 'r' (: 'l' (: 'd' (: '!' []))))))))))))) in
 let fibs Y(\fibs (: 1 (: 1 (zipWith + fibs (tail fibs))))) in
-let main (>> 
+let main (>>
     (putStrLn helloworld)
     (sequence (map (\x putStrLn (showInt x)) (take 30 fibs)))
   )
@@ -79,3 +83,5 @@ in runIO main
 - [x] Weak normal form
 - [ ] Blah Blah
 - [ ] Refactor
+- [ ] Codegen
+
