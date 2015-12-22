@@ -1,11 +1,12 @@
-CC = clang++
-CFLAGS = -std=c++11 -Wall
-.PHONY = all clean
+CXX = clang++
+CXXFLAGS = -std=c++11 -Wall -O2
+targets = main
+.PHONY = clean
 
-all: main
+all: $(targets)
 
-main: main.cpp Parsers.hpp Dictionary.hpp
-	$(CC) $(CFLAGS) -o main main.cpp
+main: $(addprefix src/, main.cpp Parsers.hpp Dictionary.hpp)
+	$(CXX) $(CXXFLAGS) $< -o $@
 
 clean:
-	rm main
+	rm -rf $(targets)
