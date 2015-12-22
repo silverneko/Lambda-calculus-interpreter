@@ -42,7 +42,7 @@ class Expression{
 
     Expression() : type(Nothing), name(), body(), arg() {}
     Expression(Type t) : type(t), name(), body(), arg() {}
-    Expression(int v) : type(Constant), val(v), name("Lit Int") {}
+    Expression(int v) : type(Constant), val(v), name() {}
     Expression(const std::string& str) : type(Var), name(str) {}
     Expression(const Expression& expr) : type(expr.type), val(expr.val), name(expr.name), body(expr.body), arg(expr.arg) {}
 
