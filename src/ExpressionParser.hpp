@@ -6,7 +6,6 @@
 #include <algorithm>
 #include <functional>
 #include <deque>
-#include <memory>
 #include <sstream>
 
 class Token{
@@ -38,7 +37,8 @@ class Expression{
 
     int val;
     std::string name;
-    std::shared_ptr<Expression> body, arg;
+    Expression * body;
+    Expression * arg;
 
     Expression() : type(Nothing), name(), body(), arg() {}
     Expression(Type t) : type(t), name(), body(), arg() {}
@@ -55,7 +55,7 @@ class Expression{
     void prettyPrint() const ;
 };
 
-std::shared_ptr<Expression> parseExpression(Scanner&);
+Expression * parseExpression(Scanner&);
 
 #endif
 

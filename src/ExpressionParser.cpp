@@ -151,21 +151,21 @@ T stringTo(const string& str){
   return res;
 }
 
-shared_ptr<Expression> parseExpressionTail(Scanner&);
+Expression * parseExpressionTail(Scanner&);
 
-shared_ptr<Expression> parseExpression(Scanner &scanner){
-  shared_ptr<Expression> expr(parseExpressionTail(scanner));
+Expression * parseExpression(Scanner &scanner){
+  Expression * expr(parseExpressionTail(scanner));
   if(expr == nullptr){
     cerr << "[Parse expression] Unexpected token: " << scanner.peekToken().name << endl;
     exit(1);
     return nullptr;
   }
   while(true){
-    shared_ptr<Expression> expr1(parseExpressionTail(scanner));
+    Expression * expr1(parseExpressionTail(scanner));
     if(expr1 == nullptr){
       return expr;
     }else{
-      shared_ptr<Expression> expr2(new Expression(Expression::Ap));
+      Expression * expr2(new Expression(Expression::Ap));
       expr2->body = expr;
       expr2->arg  = expr1;
       expr = expr2;
@@ -173,9 +173,9 @@ shared_ptr<Expression> parseExpression(Scanner &scanner){
   }
 }
 
-shared_ptr<Expression> parseExpressionTail(Scanner &scanner){
+Expression * parseExpressionTail(Scanner &scanner){
   Token token = scanner.getToken();
-  shared_ptr<Expression> expr(nullptr);
+  Expression * expr(nullptr);
   switch(token.type){
     case Token::Lambda:
       token = scanner.getToken();
@@ -183,13 +183,13 @@ shared_ptr<Expression> parseExpressionTail(Scanner &scanner){
         cerr << "[Parse] Expected an identifier: " << token.name << endl;
         exit(1);
       }
-      expr.reset(new Expression(Expression::Lambda));
+      expr = new Expression(Expression::Lambda);
       expr->name = token.name;
       expr->body = parseExpression(scanner);
       return expr;
 
     case Token::Identifier:
-      expr.reset(new Expression(Expression::Var));
+      expr = new Expression(Expression::Var);
       expr->name = token.name;
       return expr;
 
@@ -200,8 +200,8 @@ shared_ptr<Expression> parseExpressionTail(Scanner &scanner){
           cerr << "[Parse] Expected an identifier: " << token.name << endl;
           exit(1);
         }
-        expr.reset(new Expression(Expression::Ap));
-        expr->body.reset(new Expression(Expression::Lambda));
+        expr = new Expression(Expression::Ap);
+        expr->body = new Expression(Expression::Lambda);
         expr->body->name = token.name;
         expr->arg = parseExpression(scanner);
         token = scanner.getToken();
@@ -217,7 +217,7 @@ shared_ptr<Expression> parseExpressionTail(Scanner &scanner){
       }
 
     case Token::Constant:
-      expr.reset(new Expression(Expression::Constant));
+      expr = new Expression(Expression::Constant);
       expr->name = token.name;
       if(token.name[0] == '\''){
         // character literal

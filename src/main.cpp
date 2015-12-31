@@ -189,8 +189,8 @@ Object weakNormalForm(const Expression& expr, const Context& env){
           return weakNormalForm(res.expr(), res.env());
         }else{
           Expression expr2(Expression::Ap);
-          expr2.body.reset(new Expression(callee.expr()));
-          expr2.arg.reset(new Expression(normalForm(arg, env).expr()));
+          expr2.body = new Expression(callee.expr());
+          expr2.arg = new Expression(normalForm(arg, env).expr());
           return makeNormalForm( expr2 );
         }
       }
@@ -221,7 +221,7 @@ Object normalForm(const Expression& expr, const Context& env){
     case Expression::Lambda:
       {
         Expression expr2(expr);
-        expr2.body.reset( new Expression(normalForm(*expr.body, env.erase( expr.name )).expr()) );
+        expr2.body = new Expression(normalForm(*expr.body, env.erase( expr.name )).expr());
         return makeNormalForm( expr2 );
       // return Object(expr2, env);
       }
@@ -240,8 +240,8 @@ Object normalForm(const Expression& expr, const Context& env){
           return normalForm(res.expr(), res.env());
         }else{
           Expression expr2(Expression::Ap);
-          expr2.body.reset(new Expression(callee.expr()));
-          expr2.arg.reset(new Expression(normalForm(arg, env).expr()));
+          expr2.body = new Expression(callee.expr());
+          expr2.arg = new Expression(normalForm(arg, env).expr());
           return makeNormalForm( expr2 );
         }
       }
@@ -263,17 +263,6 @@ int main(int argc, char *argv[])
   prelude.add("or", "\\x \\y x true y");
   // Y f = f (Y f)
   prelude.add("Y", "\\f (\\x f (x x)) (\\x f (x x))");
-  /*
-  prelude.add("Y", Object([](const Expression& expr, const Context& env){
-          Expression expr1( Expression::Ap );
-          expr1.body.reset(new Expression(expr));
-            Expression expr2( Expression::Ap );
-            expr2.body.reset(new Expression("Y"));
-            expr2.arg.reset(new Expression(expr));
-          expr1.arg.reset(new Expression(expr2));
-          return Object(expr1, env);
-        }));
-        */
   prelude.add("+", Object([](const Expression& expr, const Context& env){
           int a = normalForm(expr, env).expr().val;
           return Object([a](const Expression& expr, const Context& env){
@@ -395,7 +384,7 @@ int main(int argc, char *argv[])
     }
   }
   Scanner scanner(rawInput);
-  shared_ptr<Expression> expr = parseExpression(scanner);
+  Expression * expr = parseExpression(scanner);
   Object res = normalForm(*expr, prelude);
 
   //res.expr().prettyPrint();
